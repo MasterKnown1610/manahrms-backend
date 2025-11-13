@@ -36,13 +36,17 @@ async def register_company(
     - **company_email**: Company email address
     - **company_phone**: Company phone number (optional)
     - **company_address**: Company address (optional)
+    - **company_type**: Company type (dropdown: Solo Proprietor, Organization, Private Limited, LLP, Partnership, Public Limited, Other)
+    - **company_type_other**: Custom company type (required if company_type is "Other")
+    - **company_gst_number**: Company GST number (optional)
+    - **company_pan_number**: Company PAN number (required)
     - **admin_full_name**: Admin user's full name
     - **admin_email**: Admin user's email address
     - **admin_username**: Admin username for login
-    - **admin_password**: Admin password (min 6 characters)
+    - **company_password**: Company password (min 6 characters)
     
     Returns:
-    - Company information
+    - Company information including type, GST, PAN
     - Admin username for login
     - Success message
     
@@ -58,21 +62,6 @@ async def register_company(
         admin_username=admin_user.username,
         message="Company registered successfully! Admin can now login."
     )
-
-
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(
-    user_data: UserRegister,
-    db: Session = Depends(get_db)
-):
-    """
-    **DEPRECATED** - Please use `/auth/register-company` endpoint instead.
-    
-    This endpoint is kept for backward compatibility but will return an error.
-    All new registrations should use the company registration endpoint.
-    """
-    user = AuthService.register_user(db, user_data)
-    return user
 
 
 @router.post("/login", response_model=TokenResponse)

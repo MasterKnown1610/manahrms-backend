@@ -1,13 +1,33 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from fastapi import HTTPException, status
 from datetime import timedelta
 
 from app.api.v1.models.user_model import User, UserRole
-from app.api.v1.models.company_model import Company
-from app.api.v1.schemas.user_schema import UserRegister, UserLogin, PasswordChange
+from app.api.v1.models.company_model import Company, CompanyType
+from app.api.v1.schemas.user_schema import UserLogin, PasswordChange
 from app.api.v1.schemas.company_schema import CompanyRegister
 from app.core.security import get_password_hash, verify_password, create_access_token
 from app.core.config import settings
+
+
+def generate_company_code(db: Session) -> str:
+    """Generate a unique company code in format CMP00000001"""
+    # Find the highest existing company code number
+    last_company = db.query(Company).order_by(Company.id.desc()).first()
+    
+    if last_company and last_company.company_code:
+        # Extract number from existing code
+        try:
+            last_num = int(last_company.company_code.replace("CMP", ""))
+            new_num = last_num + 1
+        except (ValueError, AttributeError):
+            new_num = 1
+    else:
+        new_num = 1
+    
+    # Format as CMP00000001 (8 digits)
+    return f"CMP{new_num:08d}"
 
 
 class AuthService:
@@ -62,19 +82,52 @@ class AuthService:
             )
         
         try:
+            # Generate company code
+            company_code = generate_company_code(db)
+            
+            # Ensure uniqueness (retry if conflict)
+            max_attempts = 10
+            attempt = 0
+            while db.query(Company).filter(Company.company_code == company_code).first() and attempt < max_attempts:
+                # Extract number and increment
+                try:
+                    num = int(company_code.replace("CMP", ""))
+                    num += 1
+                    company_code = f"CMP{num:08d}"
+                except ValueError:
+                    company_code = generate_company_code(db)
+                attempt += 1
+            
+            # Convert company_type enum to model enum
+            company_type_map = {
+                "Solo Proprietor": CompanyType.SOLO_PROPRIETOR,
+                "Organization": CompanyType.ORGANIZATION,
+                "Private Limited": CompanyType.PRIVATE_LIMITED,
+                "LLP": CompanyType.LLP,
+                "Partnership": CompanyType.PARTNERSHIP,
+                "Public Limited": CompanyType.PUBLIC_LIMITED,
+                "Other": CompanyType.OTHER,
+            }
+            company_type_enum = company_type_map.get(company_data.company_type.value, CompanyType.OTHER)
+            
             # Create company
             new_company = Company(
+                company_code=company_code,
                 company_name=company_data.company_name,
                 email=company_data.company_email,
                 phone=company_data.company_phone,
                 address=company_data.company_address,
+                company_type=company_type_enum,
+                company_type_other=company_data.company_type_other if company_data.company_type.value == "Other" else None,
+                gst_number=company_data.company_gst_number,
+                pan_number=company_data.company_pan_number,
                 is_active=True
             )
             db.add(new_company)
             db.flush()  # Get company ID without committing
             
             # Create admin user
-            hashed_password = get_password_hash(company_data.admin_password)
+            hashed_password = get_password_hash(company_data.company_password)
             admin_user = User(
                 company_id=new_company.id,
                 email=company_data.admin_email,
@@ -100,27 +153,6 @@ class AuthService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to register company: {str(e)}"
             )
-    
-    @staticmethod
-    def register_user(db: Session, user_data: UserRegister) -> User:
-        """
-        Register a new user (DEPRECATED - Use register_company instead).
-        This method is kept for backward compatibility but should not be used.
-        
-        Args:
-            db: Database session
-            user_data: User registration data
-            
-        Returns:
-            Created user object
-            
-        Raises:
-            HTTPException: Always raises 400 - should use company registration instead
-        """
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Please use company registration endpoint instead (/auth/register-company)"
-        )
     
     @staticmethod
     def authenticate_user(db: Session, login_data: UserLogin) -> tuple[User, str]:

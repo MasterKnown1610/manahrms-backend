@@ -10,6 +10,35 @@ from app.api.v1.schemas.employee_schema import EmployeeCreate, EmployeeUpdate
 from app.core.security import get_password_hash
 
 
+def generate_employee_code(db: Session, company_id: int) -> str:
+    """Generate a unique employee code in format EMP00000001 per company"""
+    # Find the highest existing employee code number for this company
+    last_employee = (
+        db.query(Employee)
+        .filter(Employee.company_id == company_id)
+        .order_by(Employee.id.desc())
+        .first()
+    )
+    
+    if last_employee and last_employee.employee_code:
+        # Extract number from existing code (format: EMP00000001 or CMP1234EMP0001)
+        try:
+            # Try to extract number if it's in format EMP00000001
+            if last_employee.employee_code.startswith("EMP"):
+                last_num = int(last_employee.employee_code.replace("EMP", ""))
+                new_num = last_num + 1
+            else:
+                # If custom format, start from 1
+                new_num = 1
+        except (ValueError, AttributeError):
+            new_num = 1
+    else:
+        new_num = 1
+    
+    # Format as EMP00000001 (8 digits)
+    return f"EMP{new_num:08d}"
+
+
 class EmployeeService:
     """
     Service class for employee management operations.
@@ -32,15 +61,32 @@ class EmployeeService:
         Raises:
             HTTPException: If employee code or email already exists
         """
-        # Check if employee code already exists
-        existing_code = db.query(Employee).filter(
-            Employee.employee_code == employee_data.employee_code
-        ).first()
-        if existing_code:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Employee code already exists"
-            )
+        # Generate or use provided employee code
+        if employee_data.employee_code:
+            employee_code = employee_data.employee_code
+            # Check if provided employee code already exists
+            existing_code = db.query(Employee).filter(
+                Employee.employee_code == employee_code
+            ).first()
+            if existing_code:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Employee code already exists"
+                )
+        else:
+            # Auto-generate employee code
+            employee_code = generate_employee_code(db, company_id)
+            # Ensure uniqueness (retry if conflict)
+            max_attempts = 10
+            attempt = 0
+            while db.query(Employee).filter(Employee.employee_code == employee_code).first() and attempt < max_attempts:
+                try:
+                    num = int(employee_code.replace("EMP", ""))
+                    num += 1
+                    employee_code = f"EMP{num:08d}"
+                except ValueError:
+                    employee_code = generate_employee_code(db, company_id)
+                attempt += 1
         
         # Check if email already exists
         existing_email = db.query(Employee).filter(
@@ -68,7 +114,7 @@ class EmployeeService:
             # Create employee record
             new_employee = Employee(
                 company_id=company_id,
-                employee_code=employee_data.employee_code,
+                employee_code=employee_code,
                 first_name=employee_data.first_name,
                 last_name=employee_data.last_name,
                 email=employee_data.email,
@@ -84,8 +130,8 @@ class EmployeeService:
             db.flush()  # Get employee ID
             
             # Create user account for employee
-            # Generate username from employee code or email
-            username = employee_data.employee_code.lower().replace(" ", "_")
+            # Generate username from employee code
+            username = employee_code.lower().replace(" ", "_")
             
             # Check if username already exists, if so append employee ID
             existing_user = db.query(User).filter(User.username == username).first()

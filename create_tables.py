@@ -34,6 +34,7 @@ def create_all_tables():
         from app.api.v1.models.department_model import Department
         from app.api.v1.models.employee_model import Employee
         from app.api.v1.models.user_model import User
+        from app.api.v1.models.task_model import Task
         
         print(f"\n📋 Models to create:")
         for table_name in Base.metadata.tables.keys():

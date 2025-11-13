@@ -10,6 +10,7 @@ from app.api.v1.schemas.employee_schema import (
     EmployeeWithCredentials
 )
 from app.api.v1.schemas.user_schema import MessageResponse
+from app.api.v1.schemas.common import PaginatedResponse
 from app.api.v1.services.employee_service import EmployeeService
 from app.api.v1.dependencies import get_current_user, require_admin
 
@@ -29,7 +30,6 @@ async def create_employee(
     **Only company admins can access this endpoint.**
     
     Required fields:
-    - **employee_code**: Unique employee code/ID
     - **first_name**: Employee's first name
     - **last_name**: Employee's last name
     - **email**: Employee's email address (must be unique)
@@ -37,6 +37,7 @@ async def create_employee(
     - **initial_password**: Temporary password for employee's first login
     
     Optional fields:
+    - **employee_code**: Unique employee code (auto-generated in format EMP00000001 if not provided)
     - **phone**: Phone number
     - **date_of_birth**: Date of birth
     - **position**: Job position/title
@@ -58,7 +59,6 @@ async def create_employee(
     Example:
     ```json
     {
-      "employee_code": "EMP001",
       "first_name": "John",
       "last_name": "Doe",
       "email": "john.doe@company.com",
@@ -72,6 +72,7 @@ async def create_employee(
     ```
     
     Notes:
+    - Employee code is auto-generated (e.g., EMP00000001) if not provided
     - Username is auto-generated from employee_code
     - Employee account is set to force password change on first login
     - Employee is automatically linked to admin's company
@@ -127,6 +128,38 @@ async def get_all_employees(
     )
     
     return [EmployeeResponse.model_validate(emp) for emp in employees]
+
+
+@router.get("/paginated", response_model=PaginatedResponse[EmployeeResponse])
+async def get_employees_paginated(
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    limit: int = Query(20, ge=1, le=100, description="Page size"),
+    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Paginated employees list with total count.
+    """
+    base_query = db.query(EmployeeService.__annotations__ if False else None)  # placeholder to keep import order
+    # Actual query
+    query = db.query(EmployeeService.__self__ if False else None)  # placeholder
+    # Build query fresh to avoid importing models here; reuse service methods style directly
+    from app.api.v1.models.employee_model import Employee
+
+    query = db.query(Employee).filter(Employee.company_id == current_user.company_id)
+    if is_active is not None:
+        query = query.filter(Employee.is_active == is_active)
+
+    total = query.count()
+    items = query.offset((page - 1) * limit).limit(limit).all()
+
+    return PaginatedResponse[EmployeeResponse](
+        total=total,
+        page=page,
+        limit=limit,
+        items=[EmployeeResponse.model_validate(emp) for emp in items]
+    )
 
 
 @router.get("/{employee_id}", response_model=EmployeeResponse)

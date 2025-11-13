@@ -20,7 +20,7 @@ class EmployeeCreate(EmployeeBase):
     """Schema for creating an employee"""
     hire_date: date
     initial_password: str = Field(..., min_length=6, description="Initial password for employee login")
-    employee_code: str = Field(..., min_length=3, max_length=50, description="Unique employee code")
+    employee_code: Optional[str] = Field(None, min_length=3, max_length=50, description="Optional employee code (auto-generated if not provided)")
 
 
 class EmployeeUpdate(BaseModel):

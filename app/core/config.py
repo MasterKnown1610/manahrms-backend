@@ -1,5 +1,5 @@
-from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, computed_field
 from typing import Optional
 
 
@@ -12,14 +12,15 @@ class Settings(BaseSettings):
     DATABASE_USER: str = "postgres"
     DATABASE_PASSWORD: str = "123456"
     DATABASE_NAME: str = "HRMS"
-    # Optional full connection URL (takes precedence if provided)
-    DATABASE_URL_OVERRIDE: Optional[str] = Field(default=None, alias="DATABASE_URL")
+    # Optional full connection URL from environment (takes precedence if provided)
+    DATABASE_URL_ENV: Optional[str] = Field(default=None, alias="DATABASE_URL")
     
+    @computed_field
     @property
     def DATABASE_URL(self) -> str:
         """Construct PostgreSQL database URL"""
-        if self.DATABASE_URL_OVERRIDE:
-            return self.DATABASE_URL_OVERRIDE
+        if self.DATABASE_URL_ENV:
+            return self.DATABASE_URL_ENV
         return (
             f"postgresql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}"
             f"@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_NAME}"
@@ -34,9 +35,12 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "HRMS Backend"
     
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"  # Ignore extra environment variables
+    )
 
 
 # Global settings instance

@@ -7,6 +7,7 @@ from app.db.session import get_db, engine
 from app.core.config import settings
 from app.api.router import api_router
 from app.db.base import Base
+from app.db.init_db import init_database
 
 # Create FastAPI app
 app = FastAPI(
@@ -27,7 +28,7 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
-    """Test database connection and create tables on startup"""
+    """Test database connection and automatically create/update tables on startup"""
     print(f"🚀 Starting {settings.PROJECT_NAME}...")
     print(f"📊 Database: {settings.DATABASE_NAME}")
     
@@ -36,12 +37,15 @@ async def startup():
         with engine.connect() as conn:
             print("✅ Database connected successfully!")
         
-        # Create all tables
-        Base.metadata.create_all(bind=engine)
-        print("✅ Database tables created/verified!")
+        # Initialize database: create tables or add missing columns
+        if init_database():
+            print("✅ Database initialization complete!")
+        else:
+            print("⚠️  Database initialization had issues, but continuing...")
         
     except Exception as e:
         print(f"❌ Database connection failed: {e}")
+        print("⚠️  Server will continue, but database operations may fail.")
 
 
 @app.get("/")

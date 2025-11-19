@@ -98,7 +98,8 @@ class AuthService:
                     company_code = generate_company_code(db)
                 attempt += 1
             
-            # Convert company_type enum to model enum
+            # Get company_type - use the value string directly since database enum uses string values
+            # Map schema enum to model enum, then use the value
             company_type_map = {
                 "Solo Proprietor": CompanyType.SOLO_PROPRIETOR,
                 "Organization": CompanyType.ORGANIZATION,
@@ -110,14 +111,14 @@ class AuthService:
             }
             company_type_enum = company_type_map.get(company_data.company_type.value, CompanyType.OTHER)
             
-            # Create company
+            # Create company - pass enum value as string to match database enum
             new_company = Company(
                 company_code=company_code,
                 company_name=company_data.company_name,
                 email=company_data.company_email,
                 phone=company_data.company_phone,
                 address=company_data.company_address,
-                company_type=company_type_enum,
+                company_type=company_type_enum.value,  # Pass string value to match DB enum
                 company_type_other=company_data.company_type_other if company_data.company_type.value == "Other" else None,
                 gst_number=company_data.company_gst_number,
                 pan_number=company_data.company_pan_number,

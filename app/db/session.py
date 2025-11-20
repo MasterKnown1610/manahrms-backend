@@ -4,15 +4,12 @@ from typing import Generator
 
 from app.core.config import settings
 
-
-# Create SQLAlchemy engine for PostgreSQL
 engine = create_engine(
     settings.DATABASE_URL,
-    pool_pre_ping=True,  # Verify connections before using them
-    echo=True,  # Log SQL queries (set to False in production)
+    pool_pre_ping=True,
+    echo=True,
 )
 
-# Create SessionLocal class
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
@@ -20,19 +17,7 @@ SessionLocal = sessionmaker(
 )
 
 
-# Dependency to get database session
-def get_db() -> Generator[Session, None, None]:
-    """
-    Database session dependency for FastAPI.
-    
-    Usage:
-        from fastapi import Depends
-        from app.db.session import get_db
-        
-        @app.get("/items")
-        def read_items(db: Session = Depends(get_db)):
-            return db.query(Item).all()
-    """
+def get_database_session() -> Generator[Session, None, None]:
     db = SessionLocal()
     try:
         yield db

@@ -7,17 +7,14 @@ from app.api.v1.models.user_model import User, UserRole
 from app.api.v1.models.company_model import Company, CompanyType
 from app.api.v1.schemas.user_schema import UserLogin, PasswordChange
 from app.api.v1.schemas.company_schema import CompanyRegister
-from app.core.security import get_password_hash, verify_password, create_access_token
+from app.core.security import hash_password_for_storage, verify_password_against_hash, create_jwt_access_token
 from app.core.config import settings
 
 
-def generate_company_code(db: Session) -> str:
-    """Generate a unique company code in format CMP00000001"""
-    # Find the highest existing company code number
+def generate_unique_company_code(db: Session) -> str:
     last_company = db.query(Company).order_by(Company.id.desc()).first()
     
     if last_company and last_company.company_code:
-        # Extract number from existing code
         try:
             last_num = int(last_company.company_code.replace("CMP", ""))
             new_num = last_num + 1
@@ -26,32 +23,13 @@ def generate_company_code(db: Session) -> str:
     else:
         new_num = 1
     
-    # Format as CMP00000001 (8 digits)
     return f"CMP{new_num:08d}"
 
 
 class AuthService:
-    """
-    Service class for authentication operations.
-    Handles company registration, user authentication, and password management.
-    """
     
     @staticmethod
-    def register_company(db: Session, company_data: CompanyRegister) -> tuple[Company, User]:
-        """
-        Register a new company with admin user.
-        
-        Args:
-            db: Database session
-            company_data: Company registration data including admin details
-            
-        Returns:
-            Tuple of (company object, admin user object)
-            
-        Raises:
-            HTTPException: If company email, username, or admin email already exists
-        """
-        # Check if company email already exists
+    def register_company_with_admin_user(db: Session, company_data: CompanyRegister) -> tuple[Company, User]:
         existing_company = db.query(Company).filter(
             Company.email == company_data.company_email
         ).first()
@@ -82,8 +60,7 @@ class AuthService:
             )
         
         try:
-            # Generate company code
-            company_code = generate_company_code(db)
+            company_code = generate_unique_company_code(db)
             
             # Ensure uniqueness (retry if conflict)
             max_attempts = 10
@@ -95,7 +72,7 @@ class AuthService:
                     num += 1
                     company_code = f"CMP{num:08d}"
                 except ValueError:
-                    company_code = generate_company_code(db)
+                    company_code = generate_unique_company_code(db)
                 attempt += 1
             
             # Get company_type - use the value string directly since database enum uses string values
@@ -128,7 +105,7 @@ class AuthService:
             db.flush()  # Get company ID without committing
             
             # Create admin user
-            hashed_password = get_password_hash(company_data.company_password)
+            hashed_password = hash_password_for_storage(company_data.company_password)
             admin_user = User(
                 company_id=new_company.id,
                 email=company_data.admin_email,
@@ -156,21 +133,7 @@ class AuthService:
             )
     
     @staticmethod
-    def authenticate_user(db: Session, login_data: UserLogin) -> tuple[User, str]:
-        """
-        Authenticate a user (admin or employee) and generate access token.
-        
-        Args:
-            db: Database session
-            login_data: User login credentials
-            
-        Returns:
-            Tuple of (user object, access token)
-            
-        Raises:
-            HTTPException: If credentials are invalid
-        """
-        # Find user by username
+    def authenticate_user_and_generate_token(db: Session, login_data: UserLogin) -> tuple[User, str]:
         user = db.query(User).filter(User.username == login_data.username).first()
         
         if not user:
@@ -180,31 +143,27 @@ class AuthService:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Verify password
-        if not verify_password(login_data.password, user.hashed_password):
+        if not verify_password_against_hash(login_data.password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect username or password",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Check if user is active
         if not user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Inactive user account"
             )
         
-        # Check if company is active
         if not user.company.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Company account is inactive"
             )
         
-        # Create access token with role information
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
+        access_token = create_jwt_access_token(
             data={
                 "sub": user.username, 
                 "user_id": user.id,
@@ -217,56 +176,23 @@ class AuthService:
         return user, access_token
     
     @staticmethod
-    def change_password(db: Session, user: User, password_data: PasswordChange) -> None:
-        """
-        Change user password.
-        
-        Args:
-            db: Database session
-            user: Current user object
-            password_data: Password change data
-            
-        Raises:
-            HTTPException: If current password is incorrect
-        """
-        # Verify current password
-        if not verify_password(password_data.current_password, user.hashed_password):
+    def change_user_password(db: Session, user: User, password_data: PasswordChange) -> None:
+        if not verify_password_against_hash(password_data.current_password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Current password is incorrect"
             )
         
-        # Update password
-        user.hashed_password = get_password_hash(password_data.new_password)
-        user.force_password_change = False  # Reset force change flag
+        user.hashed_password = hash_password_for_storage(password_data.new_password)
+        user.force_password_change = False
         
         db.commit()
         db.refresh(user)
     
     @staticmethod
     def get_user_by_username(db: Session, username: str) -> User:
-        """
-        Get user by username.
-        
-        Args:
-            db: Database session
-            username: Username to search for
-            
-        Returns:
-            User object or None
-        """
         return db.query(User).filter(User.username == username).first()
     
     @staticmethod
     def get_user_by_id(db: Session, user_id: int) -> User:
-        """
-        Get user by ID.
-        
-        Args:
-            db: Database session
-            user_id: User ID to search for
-            
-        Returns:
-            User object or None
-        """
         return db.query(User).filter(User.id == user_id).first()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.db.session import get_database_session
 from app.api.v1.schemas.user_schema import (
     UserRegister,
     UserLogin,
@@ -15,47 +15,18 @@ from app.api.v1.schemas.company_schema import (
     CompanyRegistrationResponse
 )
 from app.api.v1.services.auth_service import AuthService
-from app.api.v1.dependencies import get_current_user
+from app.api.v1.dependencies import get_current_authenticated_user
 
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 @router.post("/register-company", response_model=CompanyRegistrationResponse, status_code=status.HTTP_201_CREATED)
-async def register_company(
+async def register_new_company_with_admin(
     company_data: CompanyRegister,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_database_session)
 ):
-    """
-    Register a new company with admin user.
-    
-    **This is the main registration endpoint for the HRMS system.**
-    
-    Required fields:
-    - **company_name**: Company name
-    - **company_email**: Company email address
-    - **company_phone**: Company phone number (optional)
-    - **company_address**: Company address (optional)
-    - **company_type**: Company type (dropdown: Solo Proprietor, Organization, Private Limited, LLP, Partnership, Public Limited, Other)
-    - **company_type_other**: Custom company type (required if company_type is "Other")
-    - **company_gst_number**: Company GST number (optional)
-    - **company_pan_number**: Company PAN number (required)
-    - **admin_full_name**: Admin user's full name
-    - **admin_email**: Admin user's email address
-    - **admin_username**: Admin username for login
-    - **company_password**: Company password (min 6 characters)
-    
-    Returns:
-    - Company information including type, GST, PAN
-    - Admin username for login
-    - Success message
-    
-    After registration:
-    1. Admin can login using the provided username and password
-    2. Admin can add employees to the company
-    3. Admin can manage departments, attendance, payroll, etc.
-    """
-    company, admin_user = AuthService.register_company(db, company_data)
+    company, admin_user = AuthService.register_company_with_admin_user(db, company_data)
     
     return CompanyRegistrationResponse(
         company=company,
@@ -65,39 +36,11 @@ async def register_company(
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(
+async def authenticate_user_and_get_token(
     login_data: UserLogin,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_database_session)
 ):
-    """
-    Login for both admin and employee users.
-    
-    Required fields:
-    - **username**: Your username
-    - **password**: Your password
-    
-    Returns:
-    - **access_token**: JWT token for authentication
-    - **token_type**: Bearer
-    - **user**: User information including role (admin/employee)
-    
-    Usage:
-    1. Use the returned access token in subsequent requests
-    2. Add to Authorization header: `Bearer <token>`
-    3. Token includes role information for access control
-    
-    Example:
-    ```
-    curl -X POST "http://localhost:8000/api/v1/auth/login" \\
-         -H "Content-Type: application/json" \\
-         -d '{"username": "admin", "password": "password123"}'
-    ```
-    
-    Notes:
-    - Employees may be prompted to change password on first login
-    - Check `force_password_change` flag in user response
-    """
-    user, access_token = AuthService.authenticate_user(db, login_data)
+    user, access_token = AuthService.authenticate_user_and_generate_token(db, login_data)
     
     return TokenResponse(
         access_token=access_token,
@@ -107,76 +50,19 @@ async def login(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_current_user_info(
-    current_user = Depends(get_current_user)
+async def get_current_authenticated_user_info(
+    current_user = Depends(get_current_authenticated_user)
 ):
-    """
-    Get current authenticated user information.
-    
-    Requires authentication token in header:
-    ```
-    Authorization: Bearer <token>
-    ```
-    
-    Returns:
-    - User ID, username, email, full name
-    - Company ID
-    - Role (admin/employee)
-    - Account status
-    - Force password change flag
-    
-    Example:
-    ```
-    curl -H "Authorization: Bearer YOUR_TOKEN" \\
-         http://localhost:8000/api/v1/auth/me
-    ```
-    """
     return current_user
 
 
 @router.post("/change-password", response_model=MessageResponse)
-async def change_password(
+async def change_current_user_password(
     password_data: PasswordChange,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_database_session)
 ):
-    """
-    Change current user's password.
-    
-    Requires authentication token in header.
-    
-    Required fields:
-    - **current_password**: Current password
-    - **new_password**: New password (min 6 characters)
-    - **confirm_password**: Confirm new password (must match)
-    
-    Usage:
-    1. Employees should change password on first login
-    2. Users can change password anytime for security
-    3. Current password must be correct
-    4. New password must be different and meet requirements
-    
-    Returns:
-    - Success message
-    
-    Example:
-    ```
-    curl -X POST "http://localhost:8000/api/v1/auth/change-password" \\
-         -H "Authorization: Bearer YOUR_TOKEN" \\
-         -H "Content-Type: application/json" \\
-         -d '{
-           "current_password": "temp123",
-           "new_password": "newSecure123",
-           "confirm_password": "newSecure123"
-         }'
-    ```
-    
-    Notes:
-    - Password change clears `force_password_change` flag
-    - User remains logged in after password change
-    - Use the same token for subsequent requests
-    """
-    AuthService.change_password(db, current_user, password_data)
+    AuthService.change_user_password(db, current_user, password_data)
     
     return MessageResponse(
         message="Password changed successfully"

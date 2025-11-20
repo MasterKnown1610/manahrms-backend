@@ -1,18 +1,10 @@
-"""
-Database initialization utility
-Automatically creates tables and adds missing columns
-"""
 from sqlalchemy import text, inspect
 from sqlalchemy.exc import ProgrammingError
 from app.db.session import engine
 from app.db.base import Base
 
 
-def init_database():
-    """
-    Initialize database: create tables if they don't exist,
-    and add missing columns if tables exist but are outdated.
-    """
+def initialize_database_on_startup():
     try:
         # Check if companies table exists
         inspector = inspect(engine)

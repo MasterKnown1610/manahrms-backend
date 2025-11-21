@@ -9,6 +9,8 @@ Base = declarative_base()
 
 from app.api.v1.models.company_model import Company  # noqa
 from app.api.v1.models.department_model import Department  # noqa
+from app.api.v1.models.department_access_model import DepartmentAccess  # noqa
 from app.api.v1.models.employee_model import Employee  # noqa
 from app.api.v1.models.user_model import User  # noqa
+from app.api.v1.models.project_model import Project  # noqa
 from app.api.v1.models.task_model import Task  # noqa

@@ -11,6 +11,7 @@ class TaskBase(BaseModel):
     priority: TaskPriority = TaskPriority.MEDIUM
     due_date: Optional[date] = None
     assigned_to_employee_id: Optional[int] = None
+    project_id: Optional[int] = Field(None, description="ID of the project this task belongs to")
 
 
 class TaskCreate(TaskBase):
@@ -24,6 +25,16 @@ class TaskUpdate(BaseModel):
     status: Optional[TaskStatus] = None
     due_date: Optional[date] = None
     assigned_to_employee_id: Optional[int] = None
+    project_id: Optional[int] = None
+
+
+class ProjectInfo(BaseModel):
+    """Schema for project information in task response"""
+    id: int
+    name: str
+    client: str
+    
+    model_config = {"from_attributes": True}
 
 
 class TaskResponse(TaskBase):
@@ -31,6 +42,7 @@ class TaskResponse(TaskBase):
     company_id: int
     status: TaskStatus
     created_by_user_id: Optional[int] = None
+    project: Optional[ProjectInfo] = None
     created_at: datetime
     updated_at: datetime
 

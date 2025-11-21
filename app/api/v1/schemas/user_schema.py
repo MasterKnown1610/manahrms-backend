@@ -26,8 +26,8 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
-    """Schema for user login"""
-    username: str
+    """Schema for user login - username field accepts either username or email"""
+    username: str = Field(..., description="Username or email address")
     password: str
 
 

@@ -6,16 +6,31 @@ from app.db.base import Base
 
 def initialize_database_on_startup():
     try:
-        # Check if companies table exists
+        # Check which tables exist
         inspector = inspect(engine)
-        tables = inspector.get_table_names()
+        existing_tables = inspector.get_table_names()
+        
+        # Define all required tables
+        required_tables = [
+            'companies',
+            'users',
+            'employees',
+            'departments',
+            'department_access',
+            'projects',
+            'tasks'
+        ]
+        
+        # Check for missing tables
+        missing_tables = [table for table in required_tables if table not in existing_tables]
         
         with engine.connect() as conn:
             # Start transaction
             trans = conn.begin()
             
             try:
-                if 'companies' not in tables:
+                # If companies table doesn't exist, create all tables
+                if 'companies' not in existing_tables:
                     # Table doesn't exist, create all tables
                     print("📦 Creating all database tables...")
                     Base.metadata.create_all(bind=engine)
@@ -23,7 +38,53 @@ def initialize_database_on_startup():
                     trans.commit()
                     return True
                 
-                # Table exists, check for missing columns
+                # If any required table is missing, create missing tables
+                if missing_tables:
+                    print(f"📦 Found {len(missing_tables)} missing table(s): {', '.join(missing_tables)}")
+                    print("   Creating missing tables...")
+                    Base.metadata.create_all(bind=engine)
+                    print("✅ Missing tables created successfully!")
+                    trans.commit()
+                    
+                    # After creating tables, check if tasks table needs project_id column
+                    # Refresh inspector to get updated table list
+                    inspector = inspect(engine)
+                    current_tables = inspector.get_table_names()
+                    if 'tasks' in current_tables and 'projects' in current_tables:
+                        tasks_columns = [col['name'] for col in inspector.get_columns('tasks')]
+                        if 'project_id' not in tasks_columns:
+                            print("📝 Adding project_id column to tasks table...")
+                            with engine.connect() as conn2:
+                                trans2 = conn2.begin()
+                                try:
+                                    conn2.execute(text("""
+                                        ALTER TABLE tasks 
+                                        ADD COLUMN IF NOT EXISTS project_id INTEGER;
+                                    """))
+                                    # Add foreign key constraint
+                                    try:
+                                        conn2.execute(text("""
+                                            ALTER TABLE tasks 
+                                            ADD CONSTRAINT tasks_project_id_fkey 
+                                            FOREIGN KEY (project_id) 
+                                            REFERENCES projects(id) ON DELETE SET NULL;
+                                        """))
+                                    except ProgrammingError:
+                                        pass  # Constraint might already exist
+                                    # Create index
+                                    conn2.execute(text("""
+                                        CREATE INDEX IF NOT EXISTS tasks_project_id_idx 
+                                        ON tasks(project_id) WHERE project_id IS NOT NULL;
+                                    """))
+                                    trans2.commit()
+                                    print("✅ Added project_id column to tasks table!")
+                                except Exception as e:
+                                    trans2.rollback()
+                                    print(f"   Warning: Could not add project_id column: {e}")
+                    
+                    return True
+                
+                # All tables exist, check for missing columns
                 print("🔍 Checking for missing columns...")
                 companies_columns = [col['name'] for col in inspector.get_columns('companies')]
                 
@@ -40,7 +101,52 @@ def initialize_database_on_startup():
                     if col_name not in companies_columns:
                         missing_columns.append(col_name)
                 
+                # Check for project_id column in tasks table (if tasks table exists)
+                # This should be checked regardless of companies table status
+                current_tables = inspector.get_table_names()
+                tasks_updated = False
+                if 'tasks' in current_tables:
+                    tasks_columns = [col['name'] for col in inspector.get_columns('tasks')]
+                    if 'project_id' not in tasks_columns:
+                        print("📝 Adding project_id column to tasks table...")
+                        # First ensure projects table exists (it should, but check)
+                        if 'projects' in current_tables:
+                            conn.execute(text("""
+                                ALTER TABLE tasks 
+                                ADD COLUMN IF NOT EXISTS project_id INTEGER;
+                            """))
+                            # Add foreign key constraint
+                            try:
+                                conn.execute(text("""
+                                    ALTER TABLE tasks 
+                                    ADD CONSTRAINT tasks_project_id_fkey 
+                                    FOREIGN KEY (project_id) 
+                                    REFERENCES projects(id) ON DELETE SET NULL;
+                                """))
+                            except ProgrammingError:
+                                # Constraint might already exist, try to drop and recreate
+                                try:
+                                    conn.execute(text("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_project_id_fkey;"))
+                                    conn.execute(text("""
+                                        ALTER TABLE tasks 
+                                        ADD CONSTRAINT tasks_project_id_fkey 
+                                        FOREIGN KEY (project_id) 
+                                        REFERENCES projects(id) ON DELETE SET NULL;
+                                    """))
+                                except ProgrammingError:
+                                    pass  # Skip if still fails
+                            # Create index for project_id
+                            conn.execute(text("""
+                                CREATE INDEX IF NOT EXISTS tasks_project_id_idx 
+                                ON tasks(project_id) WHERE project_id IS NOT NULL;
+                            """))
+                            print("✅ Added project_id column to tasks table!")
+                            tasks_updated = True
+                
                 if not missing_columns:
+                    if tasks_updated:
+                        trans.commit()
+                        return True
                     print("✅ All columns exist. Database is up to date!")
                     trans.commit()
                     return True

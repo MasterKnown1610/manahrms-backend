@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from fastapi import HTTPException, status
 from datetime import timedelta
 
@@ -134,7 +134,12 @@ class AuthService:
     
     @staticmethod
     def authenticate_user_and_generate_token(db: Session, login_data: UserLogin) -> tuple[User, str]:
-        user = db.query(User).filter(User.username == login_data.username).first()
+        user = db.query(User).filter(
+            or_(
+                User.username == login_data.username,
+                User.email == login_data.username
+            )
+        ).first()
         
         if not user:
             raise HTTPException(

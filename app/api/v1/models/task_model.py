@@ -34,6 +34,7 @@ class Task(Base):
 
     assigned_to_employee_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -42,6 +43,7 @@ class Task(Base):
     company = relationship("Company")
     assigned_to_employee = relationship("Employee")
     created_by_user = relationship("User")
+    project = relationship("Project", back_populates="tasks")
 
     def __repr__(self):
         return f"<Task {self.id} {self.title} ({self.status})>"

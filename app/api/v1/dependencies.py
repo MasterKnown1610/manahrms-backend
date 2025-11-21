@@ -21,7 +21,11 @@ def get_current_authenticated_user(
     if payload is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail={
+                "success": False,
+                "message": "Could not validate credentials",
+                "error_code": "INVALID_TOKEN"
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -29,7 +33,11 @@ def get_current_authenticated_user(
     if username is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
+            detail={
+                "success": False,
+                "message": "Could not validate credentials",
+                "error_code": "INVALID_TOKEN_PAYLOAD"
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
     
@@ -37,20 +45,32 @@ def get_current_authenticated_user(
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found",
+            detail={
+                "success": False,
+                "message": "User not found",
+                "error_code": "USER_NOT_FOUND"
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user account"
+            detail={
+                "success": False,
+                "message": "Inactive user account",
+                "error_code": "USER_INACTIVE"
+            }
         )
     
     if not user.company.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Company account is inactive"
+            detail={
+                "success": False,
+                "message": "Company account is inactive",
+                "error_code": "COMPANY_INACTIVE"
+            }
         )
     
     return user
@@ -62,7 +82,11 @@ def require_admin_role(
     if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required. Only company admins can perform this action."
+            detail={
+                "success": False,
+                "message": "Admin access required. Only company admins can perform this action.",
+                "error_code": "ADMIN_ACCESS_REQUIRED"
+            }
         )
     return current_user
 
@@ -73,7 +97,11 @@ def require_employee_role(
     if current_user.role != UserRole.EMPLOYEE:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Employee access required"
+            detail={
+                "success": False,
+                "message": "Employee access required",
+                "error_code": "EMPLOYEE_ACCESS_REQUIRED"
+            }
         )
     return current_user
 
@@ -84,7 +112,11 @@ def require_superuser_role(
     if not current_user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Superuser privileges required"
+            detail={
+                "success": False,
+                "message": "Superuser privileges required",
+                "error_code": "SUPERUSER_ACCESS_REQUIRED"
+            }
         )
     return current_user
 

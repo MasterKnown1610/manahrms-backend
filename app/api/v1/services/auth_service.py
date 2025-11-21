@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, or_
-from fastapi import HTTPException, status
+from fastapi import status
 from datetime import timedelta
 
 from app.api.v1.models.user_model import User, UserRole
@@ -9,6 +9,7 @@ from app.api.v1.schemas.user_schema import UserLogin, PasswordChange
 from app.api.v1.schemas.company_schema import CompanyRegister
 from app.core.security import hash_password_for_storage, verify_password_against_hash, create_jwt_access_token
 from app.core.config import settings
+from app.api.v1.utils.error_handler import raise_http_exception
 
 
 def generate_unique_company_code(db: Session) -> str:
@@ -34,9 +35,10 @@ class AuthService:
             Company.email == company_data.company_email
         ).first()
         if existing_company:
-            raise HTTPException(
+            raise_http_exception(
+                message="Company email already registered",
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Company email already registered"
+                error_code="COMPANY_EMAIL_EXISTS"
             )
         
         # Check if admin username already exists
@@ -44,9 +46,10 @@ class AuthService:
             User.username == company_data.admin_username
         ).first()
         if existing_username:
-            raise HTTPException(
+            raise_http_exception(
+                message="Username already taken",
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Username already taken"
+                error_code="USERNAME_EXISTS"
             )
         
         # Check if admin email already exists
@@ -54,9 +57,10 @@ class AuthService:
             User.email == company_data.admin_email
         ).first()
         if existing_admin_email:
-            raise HTTPException(
+            raise_http_exception(
+                message="Admin email already registered",
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Admin email already registered"
+                error_code="ADMIN_EMAIL_EXISTS"
             )
         
         try:
@@ -127,9 +131,10 @@ class AuthService:
             
         except Exception as e:
             db.rollback()
-            raise HTTPException(
+            raise_http_exception(
+                message=f"Failed to register company: {str(e)}",
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to register company: {str(e)}"
+                error_code="REGISTRATION_FAILED"
             )
     
     @staticmethod
@@ -142,29 +147,31 @@ class AuthService:
         ).first()
         
         if not user:
-            raise HTTPException(
+            raise_http_exception(
+                message="Incorrect username or password",
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
+                error_code="INVALID_CREDENTIALS"
             )
         
         if not verify_password_against_hash(login_data.password, user.hashed_password):
-            raise HTTPException(
+            raise_http_exception(
+                message="Incorrect username or password",
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect username or password",
-                headers={"WWW-Authenticate": "Bearer"},
+                error_code="INVALID_CREDENTIALS"
             )
         
         if not user.is_active:
-            raise HTTPException(
+            raise_http_exception(
+                message="Inactive user account",
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inactive user account"
+                error_code="USER_INACTIVE"
             )
         
         if not user.company.is_active:
-            raise HTTPException(
+            raise_http_exception(
+                message="Company account is inactive",
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Company account is inactive"
+                error_code="COMPANY_INACTIVE"
             )
         
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -183,9 +190,10 @@ class AuthService:
     @staticmethod
     def change_user_password(db: Session, user: User, password_data: PasswordChange) -> None:
         if not verify_password_against_hash(password_data.current_password, user.hashed_password):
-            raise HTTPException(
+            raise_http_exception(
+                message="Current password is incorrect",
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Current password is incorrect"
+                error_code="INVALID_CURRENT_PASSWORD"
             )
         
         user.hashed_password = hash_password_for_storage(password_data.new_password)

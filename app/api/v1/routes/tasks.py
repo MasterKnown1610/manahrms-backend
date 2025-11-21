@@ -40,6 +40,7 @@ async def list_company_tasks(
     status_filter: Optional[TaskStatus] = Query(None),
     priority_filter: Optional[TaskPriority] = Query(None),
     assigned_to_employee_id: Optional[int] = Query(None),
+    project_id: Optional[int] = Query(None, description="Filter tasks by project ID"),
     only_mine: bool = Query(False, description="Employees: limit to tasks assigned to me"),
     current_user: User = Depends(get_current_authenticated_user),
     db: Session = Depends(get_database_session),
@@ -56,6 +57,7 @@ async def list_company_tasks(
         status_filter=status_filter,
         priority_filter=priority_filter,
         assigned_to_employee_id=assigned_to_employee_id,
+        project_id=project_id,
         only_mine_employee_id=only_mine_employee_id,
     )
 

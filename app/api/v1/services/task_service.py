@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 
 from app.api.v1.models.task_model import Task, TaskStatus, TaskPriority
 from app.api.v1.models.employee_model import Employee
+from app.api.v1.models.project_model import Project
 from app.api.v1.schemas.task_schema import TaskCreate, TaskUpdate
 
 
@@ -31,6 +32,19 @@ class TaskService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Assigned employee not found in company",
                 )
+        
+        # Validate project belongs to company (if provided)
+        if data.project_id:
+            project = db.query(Project).filter(
+                Project.id == data.project_id,
+                Project.company_id == company_id,
+                Project.is_active == True,
+            ).first()
+            if not project:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Project not found in company",
+                )
 
         task = Task(
             company_id=company_id,
@@ -40,6 +54,7 @@ class TaskService:
             status=TaskStatus.OPEN,
             due_date=data.due_date,
             assigned_to_employee_id=data.assigned_to_employee_id,
+            project_id=data.project_id,
             created_by_user_id=creator_user_id,
         )
         db.add(task)
@@ -70,6 +85,7 @@ class TaskService:
         priority_filter: Optional[TaskPriority] = None,
         assigned_to_employee_id: Optional[int] = None,
         only_mine_employee_id: Optional[int] = None,
+        project_id: Optional[int] = None,
     ) -> Tuple[List[Task], int]:
         query = db.query(Task).filter(Task.company_id == company_id)
 
@@ -81,6 +97,8 @@ class TaskService:
             query = query.filter(Task.assigned_to_employee_id == assigned_to_employee_id)
         if only_mine_employee_id is not None:
             query = query.filter(Task.assigned_to_employee_id == only_mine_employee_id)
+        if project_id is not None:
+            query = query.filter(Task.project_id == project_id)
 
         total = query.count()
         items = (
@@ -110,6 +128,21 @@ class TaskService:
                         detail="Assigned employee not found in company",
                     )
             # allow setting to None to unassign
+        
+        # Validate project (if changed)
+        if data.project_id is not None:
+            if data.project_id:
+                project = db.query(Project).filter(
+                    Project.id == data.project_id,
+                    Project.company_id == company_id,
+                    Project.is_active == True,
+                ).first()
+                if not project:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail="Project not found in company",
+                    )
+            # allow setting to None to unassign from project
 
         # Apply updates
         update_data = data.model_dump(exclude_unset=True)

@@ -22,6 +22,7 @@ class Department(Base):
     # Relationships
     company = relationship("Company", back_populates="departments")
     employees = relationship("Employee", back_populates="department")
+    access_grants = relationship("DepartmentAccess", back_populates="department", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Department {self.name}>"

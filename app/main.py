@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -7,6 +8,11 @@ from app.db.session import get_database_session, engine
 from app.core.config import settings
 from app.api.router import api_router
 from app.db.init_db import initialize_database_on_startup
+from app.api.v1.utils.error_handler import (
+    http_exception_handler,
+    validation_exception_handler,
+    general_exception_handler
+)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -21,6 +27,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Register custom exception handlers for consistent error format
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
 
 
 @app.on_event("startup")

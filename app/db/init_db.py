@@ -19,7 +19,8 @@ def initialize_database_on_startup():
             'department_access',
             'projects',
             'tasks',
-            'attendances'
+            'attendances',
+            'vector_store'  # For RAG with pgvector
         ]
         
         # Check for missing tables
@@ -30,6 +31,31 @@ def initialize_database_on_startup():
             trans = conn.begin()
             
             try:
+                # Enable pgvector extension if needed (for vector_store table)
+                # Note: For Neon DB, extension should be enabled via SQL Editor first
+                try:
+                    conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+                    # Commit the extension creation
+                    trans.commit()
+                    # Start a new transaction for table operations
+                    trans = conn.begin()
+                except Exception as e:
+                    # Extension might not be available or already enabled
+                    # For Neon DB, user needs to enable it via SQL Editor
+                    trans.rollback()
+                    # Start a new transaction for table operations
+                    trans = conn.begin()
+                    error_msg = str(e).lower()
+                    if "neon" in error_msg or "permission" in error_msg or "cannot" in error_msg:
+                        print(f"⚠️  Note: pgvector extension needs to be enabled manually")
+                        print("   For Neon DB: Enable via SQL Editor in Neon dashboard")
+                        print("   Run: CREATE EXTENSION IF NOT EXISTS vector;")
+                        print("   The script will continue, but vector features won't work until enabled.")
+                    else:
+                        print(f"⚠️  Note: pgvector extension not available: {e}")
+                        print("   Vector store features will not work until pgvector is installed")
+                    # Continue with table creation anyway
+                
                 # If companies table doesn't exist, create all tables
                 if 'companies' not in existing_tables:
                     # Table doesn't exist, create all tables

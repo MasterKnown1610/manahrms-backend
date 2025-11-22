@@ -1,161 +1,178 @@
 """
 AI Chat Service for HRMS
-Uses OpenAI API with RAG (Retrieval Augmented Generation) to answer questions
-about company data efficiently using minimal tokens.
+Uses OpenAI API with RAG (Retrieval-Augmented Generation) and pgvector
+to answer questions about company data efficiently using minimal tokens.
+Only retrieves relevant data chunks based on semantic similarity.
 """
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import text, bindparam
 from openai import OpenAI
 import json
 
 from app.core.config import settings
 from app.api.v1.models.company_model import Company
-from app.api.v1.models.employee_model import Employee
-from app.api.v1.models.department_model import Department
-from app.api.v1.models.project_model import Project
-from app.api.v1.models.task_model import Task
-from app.api.v1.models.attendance_model import Attendance
+from app.api.v1.services.embedding_service import EmbeddingService
 from app.api.v1.utils.error_handler import raise_http_exception
 from fastapi import status
 
 
 class AIChatService:
-    """Service for AI-powered chat using company data"""
+    """Service for AI-powered chat using semantic search with pgvector"""
     
     def __init__(self):
         if not settings.OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY is not configured. Please set OPENAI_API_KEY in environment variables or .env file.")
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = settings.OPENAI_MODEL
+        self.embedding_service = EmbeddingService()
+        self.top_k = 10  # Number of relevant chunks to retrieve
     
-    def _extract_company_context(self, db: Session, company_id: int) -> Dict:
-        """
-        Extract relevant company data to create context.
-        This is done efficiently to minimize token usage.
-        """
+    def _get_company_info(self, db: Session, company_id: int) -> Dict:
+        """Get basic company information"""
         company = db.query(Company).filter(Company.id == company_id).first()
         if not company:
             return {}
         
-        # Get summary counts and key information
-        employees = db.query(Employee).filter(
-            Employee.company_id == company_id,
-            Employee.is_active == True
-        ).all()
-        
-        departments = db.query(Department).filter(
-            Department.company_id == company_id,
-            Department.is_active == True
-        ).all()
-        
-        projects = db.query(Project).filter(
-            Project.company_id == company_id,
-            Project.is_active == True
-        ).all()
-        
-        # Get tasks with relationships loaded
-        tasks = db.query(Task).filter(
-            Task.company_id == company_id
-        ).all()
-        
-        # Create employee lookup for quick access
-        employee_lookup = {emp.id: emp for emp in employees}
-        
-        # Build detailed task information
-        tasks_detail = []
-        for task in tasks[:50]:  # Limit to 50 most recent tasks
-            assigned_employee = None
-            if task.assigned_to_employee_id and task.assigned_to_employee_id in employee_lookup:
-                emp = employee_lookup[task.assigned_to_employee_id]
-                assigned_employee = {
-                    "name": f"{emp.first_name} {emp.last_name}",
-                    "code": emp.employee_code,
-                    "email": emp.email,
-                    "position": emp.position,
-                }
-            
-            task_info = {
-                "id": task.id,
-                "title": task.title,
-                "description": task.description,
-                "status": task.status.value,
-                "priority": task.priority.value,
-                "due_date": str(task.due_date) if task.due_date else None,
-                "assigned_to": assigned_employee,
-                "project": task.project.name if task.project else None,
-            }
-            tasks_detail.append(task_info)
-        
-        # Build concise context
-        context = {
-            "company": {
-                "name": company.company_name,
-                "code": company.company_code,
-                "type": company.company_type,
-                "email": company.email,
-                "phone": company.phone,
-            },
-            "employees": [
-                {
-                    "name": f"{emp.first_name} {emp.last_name}",
-                    "code": emp.employee_code,
-                    "email": emp.email,
-                    "position": emp.position,
-                    "department": emp.department.name if emp.department else None,
-                }
-                for emp in employees[:50]  # Limit to 50 most recent
-            ],
-            "departments": [
-                {
-                    "name": dept.name,
-                    "description": dept.description,
-                }
-                for dept in departments
-            ],
-            "projects": [
-                {
-                    "name": proj.name,
-                    "client": proj.client,
-                    "target_date": str(proj.target_date) if proj.target_date else None,
-                }
-                for proj in projects[:20]  # Limit to 20 most recent
-            ],
-            "tasks": tasks_detail,
-            "tasks_summary": {
-                "total": len(tasks),
-                "open": len([t for t in tasks if t.status.value == "open"]),
-                "in_progress": len([t for t in tasks if t.status.value == "in_progress"]),
-                "closed": len([t for t in tasks if t.status.value == "closed"]),
-            },
-            "statistics": {
-                "total_employees": len(employees),
-                "total_departments": len(departments),
-                "total_projects": len(projects),
-            }
+        return {
+            "name": company.company_name,
+            "code": company.company_code,
+            "type": company.company_type,
         }
+    
+    def _search_relevant_chunks(
+        self,
+        db: Session,
+        company_id: int,
+        query_embedding: List[float],
+        top_k: int = 10
+    ) -> List[Dict]:
+        """
+        Search for relevant chunks using pgvector similarity search.
+        Uses cosine distance to find most similar content.
+        
+        Args:
+            db: Database session
+            company_id: Company ID to filter results
+            query_embedding: Embedding vector of the user's question
+            top_k: Number of top results to return
+            
+        Returns:
+            List of relevant chunks with metadata
+        """
+        # Convert embedding list to PostgreSQL array format for vector type
+        # pgvector expects a string representation: '[0.1,0.2,0.3,...]'
+        # This is safe because query_embedding comes from OpenAI API, not user input
+        embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
+        
+        # Use pgvector's cosine distance operator (<->) for similarity search
+        # Lower distance = higher similarity
+        # We need to embed the vector string directly in SQL since CAST with parameters
+        # doesn't work well with psycopg2 parameter binding
+        # The embedding_str is safe - it's generated from OpenAI API response (list of floats)
+        query = text(f"""
+            SELECT 
+                content_type,
+                content_id,
+                content_text,
+                content_metadata,
+                1 - (embedding <=> '{embedding_str}'::vector) AS similarity
+            FROM vector_store
+            WHERE company_id = :company_id
+            ORDER BY embedding <=> '{embedding_str}'::vector
+            LIMIT :top_k
+        """)
+        
+        result = db.execute(
+            query,
+            {
+                "company_id": company_id,
+                "top_k": top_k
+            }
+        )
+        
+        chunks = []
+        for row in result:
+            chunks.append({
+                "content_type": row.content_type,
+                "content_id": row.content_id,
+                "content_text": row.content_text,
+                "metadata": json.loads(row.content_metadata) if row.content_metadata else {},
+                "similarity": float(row.similarity)
+            })
+        
+        return chunks
+    
+    def _build_context_from_chunks(self, chunks: List[Dict], company_info: Dict) -> Dict:
+        """
+        Build a concise context dictionary from retrieved chunks.
+        Groups chunks by content type for better organization.
+        """
+        context = {
+            "company": company_info,
+            "relevant_data": {}
+        }
+        
+        # Group chunks by content type
+        for chunk in chunks:
+            content_type = chunk["content_type"]
+            if content_type not in context["relevant_data"]:
+                context["relevant_data"][content_type] = []
+            
+            # Include metadata for richer context
+            item = {
+                "content": chunk["content_text"],
+                "metadata": chunk["metadata"],
+                "similarity": round(chunk["similarity"], 3)
+            }
+            context["relevant_data"][content_type].append(item)
         
         return context
     
-    def _create_system_prompt(self, company_context: Dict) -> str:
-        """Create a system prompt with company context"""
-        context_str = json.dumps(company_context, indent=2)
+    def _create_system_prompt(self, context: Dict) -> str:
+        """Create a system prompt with only relevant context"""
+        # Format context more efficiently
+        context_parts = []
         
-        return f"""You are an AI assistant for an HRMS (Human Resource Management System) helping employees and administrators answer questions about their company data.
+        if context.get("company"):
+            context_parts.append(f"Company: {context['company'].get('name', 'N/A')} ({context['company'].get('code', 'N/A')})")
+        
+        relevant_data = context.get("relevant_data", {})
+        
+        if relevant_data.get("employee"):
+            context_parts.append(f"\nRelevant Employees ({len(relevant_data['employee'])}):")
+            for emp in relevant_data["employee"][:5]:  # Limit to top 5
+                context_parts.append(f"  - {emp['content']}")
+        
+        if relevant_data.get("project"):
+            context_parts.append(f"\nRelevant Projects ({len(relevant_data['project'])}):")
+            for proj in relevant_data["project"][:5]:
+                context_parts.append(f"  - {proj['content']}")
+        
+        if relevant_data.get("task"):
+            context_parts.append(f"\nRelevant Tasks ({len(relevant_data['task'])}):")
+            for task in relevant_data["task"][:5]:
+                context_parts.append(f"  - {task['content']}")
+        
+        if relevant_data.get("department"):
+            context_parts.append(f"\nRelevant Departments ({len(relevant_data['department'])}):")
+            for dept in relevant_data["department"][:3]:
+                context_parts.append(f"  - {dept['content']}")
+        
+        context_str = "\n".join(context_parts)
+        
+        return f"""You are an AI assistant for an HRMS (Human Resource Management System).
 
-Company Context:
+Relevant Company Context (retrieved via semantic search):
 {context_str}
 
 Instructions:
-1. Answer questions based ONLY on the provided company context
+1. Answer questions based ONLY on the provided relevant context
 2. Be concise and accurate - use minimal tokens
 3. If information is not available in the context, say so clearly
-4. For employee-related questions, use the employee list provided
-5. For department questions, refer to the departments list
-6. For project questions, use the projects information
-7. For task questions, use the detailed tasks list which includes assigned employees, status, priority, and due dates
-8. When asked about tasks, provide details including title, assigned employee name, status, and priority
-9. Always be helpful and professional
-10. If asked about data not in context, suggest checking the HRMS system directly
+4. Focus on the specific data provided rather than making assumptions
+5. Always be helpful and professional
+6. If asked about data not in context, suggest checking the HRMS system directly
 
 Remember: Keep responses brief and token-efficient while being helpful."""
     
@@ -167,7 +184,8 @@ Remember: Keep responses brief and token-efficient while being helpful."""
         conversation_history: Optional[List[Dict[str, str]]] = None
     ) -> str:
         """
-        Process a chat question and return AI response.
+        Process a chat question and return AI response using semantic search.
+        Only retrieves relevant data chunks, dramatically reducing token usage.
         
         Args:
             db: Database session
@@ -185,25 +203,48 @@ Remember: Keep responses brief and token-efficient while being helpful."""
                 error_code="OPENAI_NOT_CONFIGURED"
             )
         
-        # Extract company context
-        company_context = self._extract_company_context(db, company_id)
-        
-        # Create system prompt
-        system_prompt = self._create_system_prompt(company_context)
-        
-        # Build messages
-        messages = [
-            {"role": "system", "content": system_prompt}
-        ]
-        
-        # Add conversation history if provided
-        if conversation_history:
-            messages.extend(conversation_history)
-        
-        # Add current question
-        messages.append({"role": "user", "content": user_question})
-        
         try:
+            # Get basic company info
+            company_info = self._get_company_info(db, company_id)
+            
+            # Generate embedding for user's question
+            query_embedding = self.embedding_service.generate_embedding(user_question)
+            
+            # Search for relevant chunks using semantic similarity
+            relevant_chunks = self._search_relevant_chunks(
+                db=db,
+                company_id=company_id,
+                query_embedding=query_embedding,
+                top_k=self.top_k
+            )
+            
+            # If no relevant chunks found, provide basic company info only
+            if not relevant_chunks:
+                context = {
+                    "company": company_info,
+                    "relevant_data": {}
+                }
+            else:
+                # Build context from retrieved chunks
+                context = self._build_context_from_chunks(relevant_chunks, company_info)
+            
+            # Create system prompt with only relevant context
+            system_prompt = self._create_system_prompt(context)
+            
+            # Build messages
+            messages = [
+                {"role": "system", "content": system_prompt}
+            ]
+            
+            # Add conversation history if provided (limit to last 3 exchanges to save tokens)
+            if conversation_history:
+                # Keep only recent history to minimize tokens
+                recent_history = conversation_history[-6:] if len(conversation_history) > 6 else conversation_history
+                messages.extend(recent_history)
+            
+            # Add current question
+            messages.append({"role": "user", "content": user_question})
+            
             # Call OpenAI API
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -220,4 +261,3 @@ Remember: Keep responses brief and token-efficient while being helpful."""
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 error_code="AI_CHAT_ERROR"
             )
-

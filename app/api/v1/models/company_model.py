@@ -76,6 +76,7 @@ class Company(Base):
     employees = relationship("Employee", back_populates="company", cascade="all, delete-orphan")
     departments = relationship("Department", back_populates="company", cascade="all, delete-orphan")
     projects = relationship("Project", back_populates="company", cascade="all, delete-orphan")
+    vector_chunks = relationship("VectorStore", back_populates="company", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Company {self.company_name}>"

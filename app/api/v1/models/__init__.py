@@ -6,6 +6,7 @@ from app.api.v1.models.company_model import Company
 from app.api.v1.models.department_model import Department
 from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.user_model import User, UserRole
+from app.api.v1.models.attendance_model import Attendance
 
 __all__ = [
     "Company",
@@ -13,5 +14,6 @@ __all__ = [
     "Employee",
     "User",
     "UserRole",
+    "Attendance",
 ]
 

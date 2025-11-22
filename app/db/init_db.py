@@ -18,7 +18,8 @@ def initialize_database_on_startup():
             'departments',
             'department_access',
             'projects',
-            'tasks'
+            'tasks',
+            'attendances'
         ]
         
         # Check for missing tables

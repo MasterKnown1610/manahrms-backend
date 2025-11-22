@@ -5,6 +5,7 @@ from typing import Optional, List
 from app.db.session import get_database_session
 from app.api.v1.dependencies import get_current_authenticated_user, require_admin_role
 from app.api.v1.models.user_model import User
+from app.api.v1.models.project_model import Project
 from app.api.v1.schemas.project_schema import (
     ProjectCreate,
     ProjectUpdate,
@@ -12,17 +13,18 @@ from app.api.v1.schemas.project_schema import (
     ProjectWithTasksResponse
 )
 from app.api.v1.schemas.user_schema import MessageResponse
-from app.api.v1.schemas.common import PaginatedResponse
+from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
 from app.api.v1.schemas.task_schema import TaskResponse
 from app.api.v1.models.task_model import TaskStatus, TaskPriority
 from app.api.v1.services.project_service import ProjectService
 from app.api.v1.services.task_service import TaskService
+from app.api.v1.utils.pagination import paginate_query, create_paginated_response
 
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
 
-@router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_project(
     project_data: ProjectCreate,
     current_user: User = Depends(require_admin_role),
@@ -41,34 +43,24 @@ async def create_new_project(
     return ProjectResponse.model_validate(project)
 
 
-@router.get("/", response_model=PaginatedResponse[ProjectResponse])
-async def get_all_company_projects(
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    is_active: Optional[bool] = Query(None, description="Filter by active status"),
-    project_lead_id: Optional[int] = Query(None, description="Filter by project lead"),
+@router.post("/query", response_model=PaginatedResponse[ProjectResponse])
+async def query_projects(
+    pagination_request: PaginationRequest,
     current_user: User = Depends(get_current_authenticated_user),
     db: Session = Depends(get_database_session)
 ):
     """
-    Get all projects for the company.
-    Supports pagination and filtering by active status and project lead.
+    Query projects with pagination, filtering, and sorting.
+    Uses POST method with pagination request payload.
     """
-    projects, total = ProjectService.list_projects(
-        db=db,
-        company_id=current_user.company_id,
-        page=page,
-        limit=limit,
-        is_active=is_active,
-        project_lead_id=project_lead_id
-    )
+    # Build base query
+    query = db.query(Project).filter(Project.company_id == current_user.company_id)
     
-    return PaginatedResponse[ProjectResponse](
-        total=total,
-        page=page,
-        limit=limit,
-        items=[ProjectResponse.model_validate(project) for project in projects]
-    )
+    # Apply pagination, filters, and sorting
+    items, pagination_info = paginate_query(query, pagination_request, Project)
+    
+    # Create paginated response
+    return create_paginated_response(items, pagination_info, ProjectResponse)
 
 
 @router.get("/my-projects", response_model=List[ProjectResponse])

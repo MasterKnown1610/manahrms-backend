@@ -10,15 +10,17 @@ from app.api.v1.schemas.employee_schema import (
     EmployeeWithCredentials
 )
 from app.api.v1.schemas.user_schema import MessageResponse
-from app.api.v1.schemas.common import PaginatedResponse
+from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
 from app.api.v1.services.employee_service import EmployeeService
 from app.api.v1.dependencies import get_current_authenticated_user, require_admin_role
+from app.api.v1.utils.pagination import paginate_query, create_paginated_response
+from app.api.v1.models.employee_model import Employee
 
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
 
 
-@router.post("/", response_model=EmployeeWithCredentials, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=EmployeeWithCredentials, status_code=status.HTTP_201_CREATED)
 async def create_new_employee(
     employee_data: EmployeeCreate,
     current_user = Depends(require_admin_role),
@@ -38,52 +40,24 @@ async def create_new_employee(
     )
 
 
-@router.get("/", response_model=List[EmployeeResponse])
-async def get_all_company_employees(
-    skip: int = Query(0, ge=0, description="Number of records to skip"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
-    is_active: Optional[bool] = Query(None, description="Filter by active status"),
+@router.post("/query", response_model=PaginatedResponse[EmployeeResponse])
+async def query_employees(
+    pagination_request: PaginationRequest,
     current_user = Depends(get_current_authenticated_user),
     db: Session = Depends(get_database_session)
 ):
-    employees = EmployeeService.get_all_employees(
-        db,
-        current_user.company_id,
-        skip=skip,
-        limit=limit,
-        is_active=is_active
-    )
-    
-    return [EmployeeResponse.model_validate(emp) for emp in employees]
-
-
-@router.get("/paginated", response_model=PaginatedResponse[EmployeeResponse])
-async def get_employees_with_pagination(
-    page: int = Query(1, ge=1, description="Page number (1-based)"),
-    limit: int = Query(20, ge=1, le=100, description="Page size"),
-    is_active: Optional[bool] = Query(None, description="Filter by active status"),
-    current_user = Depends(get_current_authenticated_user),
-    db: Session = Depends(get_database_session)
-):
-    base_query = db.query(EmployeeService.__annotations__ if False else None)  # placeholder to keep import order
-    # Actual query
-    query = db.query(EmployeeService.__self__ if False else None)  # placeholder
-    # Build query fresh to avoid importing models here; reuse service methods style directly
-    from app.api.v1.models.employee_model import Employee
-
+    """
+    Query employees with pagination, filtering, and sorting.
+    Uses POST method with pagination request payload.
+    """
+    # Build base query
     query = db.query(Employee).filter(Employee.company_id == current_user.company_id)
-    if is_active is not None:
-        query = query.filter(Employee.is_active == is_active)
-
-    total = query.count()
-    items = query.offset((page - 1) * limit).limit(limit).all()
-
-    return PaginatedResponse[EmployeeResponse](
-        total=total,
-        page=page,
-        limit=limit,
-        items=[EmployeeResponse.model_validate(emp) for emp in items]
-    )
+    
+    # Apply pagination, filters, and sorting
+    items, pagination_info = paginate_query(query, pagination_request, Employee)
+    
+    # Create paginated response
+    return create_paginated_response(items, pagination_info, EmployeeResponse)
 
 
 @router.get("/{employee_id}", response_model=EmployeeResponse)

@@ -14,16 +14,18 @@ from app.api.v1.schemas.department_schema import (
     UserAccessInfo
 )
 from app.api.v1.schemas.user_schema import MessageResponse
+from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
 from app.api.v1.models.department_model import Department
 from app.api.v1.models.user_model import User
 from app.api.v1.dependencies import get_current_authenticated_user, require_admin_role
 from app.api.v1.services.department_service import DepartmentService
+from app.api.v1.utils.pagination import paginate_query, create_paginated_response
 
 
 router = APIRouter(prefix="/departments", tags=["Departments"])
 
 
-@router.post("/", response_model=DepartmentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=DepartmentResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_department(
     department_data: DepartmentCreate,
     current_user = Depends(require_admin_role),
@@ -55,28 +57,39 @@ async def create_new_department(
     return DepartmentResponse.model_validate(new_department)
 
 
-@router.get("/", response_model=List[DepartmentResponse])
-async def get_all_company_departments(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000),
-    is_active: Optional[bool] = Query(None),
+@router.post("/query", response_model=PaginatedResponse[DepartmentResponse])
+async def query_departments(
+    pagination_request: PaginationRequest,
     current_user: User = Depends(get_current_authenticated_user),
     db: Session = Depends(get_database_session)
 ):
     """
-    Get all departments the current user has access to.
+    Query departments with pagination, filtering, and sorting.
+    Uses POST method with pagination request payload.
     Admins see all departments in their company.
     Employees see only departments they have been granted access to.
     """
-    departments = DepartmentService.get_accessible_departments(
-        db=db,
-        user=current_user,
-        skip=skip,
-        limit=limit,
-        is_active=is_active
-    )
+    # Get accessible departments query
+    from app.api.v1.models.user_model import UserRole
+    if current_user.role == UserRole.ADMIN:
+        # Admins see all departments in company
+        query = db.query(Department).filter(Department.company_id == current_user.company_id)
+    else:
+        # Employees see only departments they have access to
+        from app.api.v1.models.department_access_model import DepartmentAccess
+        query = db.query(Department).join(
+            DepartmentAccess,
+            Department.id == DepartmentAccess.department_id
+        ).filter(
+            DepartmentAccess.user_id == current_user.id,
+            Department.company_id == current_user.company_id
+        )
     
-    return [DepartmentResponse.model_validate(dept) for dept in departments]
+    # Apply pagination, filters, and sorting
+    items, pagination_info = paginate_query(query, pagination_request, Department)
+    
+    # Create paginated response
+    return create_paginated_response(items, pagination_info, DepartmentResponse)
 
 
 @router.get("/{department_id}", response_model=DepartmentResponse)

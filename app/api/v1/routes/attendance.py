@@ -11,6 +11,7 @@ from app.api.v1.dependencies import (
 )
 from app.api.v1.models.user_model import User, UserRole
 from app.api.v1.models.employee_model import Employee
+from app.api.v1.models.attendance_model import Attendance
 from app.api.v1.services.attendance_service import AttendanceService
 from app.api.v1.schemas.attendance_schema import (
     AttendanceResponse,
@@ -21,7 +22,8 @@ from app.api.v1.schemas.attendance_schema import (
     PunchInResponse,
     PunchOutResponse
 )
-from app.api.v1.schemas.common import PaginatedResponse
+from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
+from app.api.v1.utils.pagination import paginate_query, create_paginated_response
 
 
 router = APIRouter(prefix="/attendance", tags=["Attendance"])
@@ -210,29 +212,27 @@ async def get_attendance_stats(
     return AttendanceStatsResponse(**stats)
 
 
-@router.get("/records", response_model=PaginatedResponse[AttendanceListResponse])
-async def list_attendance_records(
-    employee_id: Optional[int] = Query(None, description="Filter by employee ID"),
-    start_date: Optional[date] = Query(None, description="Start date filter"),
-    end_date: Optional[date] = Query(None, description="End date filter"),
-    page: int = Query(1, ge=1, description="Page number"),
-    limit: int = Query(50, ge=1, le=100, description="Items per page"),
+@router.post("/query", response_model=PaginatedResponse[AttendanceListResponse])
+async def query_attendance_records(
+    pagination_request: PaginationRequest,
     current_user: User = Depends(require_admin_role),
     db: Session = Depends(get_database_session)
 ):
     """
-    List attendance records with filters.
+    Query attendance records with pagination, filtering, and sorting.
+    Uses POST method with pagination request payload.
     Admin only endpoint.
     """
-    attendances, total = AttendanceService.list_attendance_records(
-        db=db,
-        company_id=current_user.company_id,
-        employee_id=employee_id,
-        start_date=start_date,
-        end_date=end_date,
-        page=page,
-        limit=limit
+    # Build base query - join with Employee to filter by company
+    query = db.query(Attendance).join(
+        Employee,
+        Attendance.employee_id == Employee.id
+    ).filter(
+        Employee.company_id == current_user.company_id
     )
+    
+    # Apply pagination, filters, and sorting
+    attendances, pagination_info = paginate_query(query, pagination_request, Attendance)
     
     # Build response with employee names
     items = []
@@ -250,10 +250,8 @@ async def list_attendance_records(
         ))
     
     return PaginatedResponse[AttendanceListResponse](
-        total=total,
-        page=page,
-        limit=limit,
-        items=items
+        data=items,
+        pagination=pagination_info
     )
 
 

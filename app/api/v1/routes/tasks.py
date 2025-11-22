@@ -5,20 +5,21 @@ from typing import Optional
 from app.db.session import get_database_session
 from app.api.v1.dependencies import get_current_authenticated_user, require_admin_role
 from app.api.v1.models.user_model import User, UserRole
-from app.api.v1.models.task_model import TaskStatus, TaskPriority
-from app.api.v1.schemas.common import PaginatedResponse
+from app.api.v1.models.task_model import TaskStatus, TaskPriority, Task
+from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
 from app.api.v1.schemas.task_schema import (
     TaskCreate,
     TaskUpdate,
     TaskResponse,
 )
 from app.api.v1.services.task_service import TaskService
+from app.api.v1.utils.pagination import paginate_query, create_paginated_response
 
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
 
-@router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/create", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_task(
     data: TaskCreate,
     current_user: User = Depends(require_admin_role),
@@ -33,40 +34,28 @@ async def create_new_task(
     return TaskResponse.model_validate(task)
 
 
-@router.get("/", response_model=PaginatedResponse[TaskResponse])
-async def list_company_tasks(
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    status_filter: Optional[TaskStatus] = Query(None),
-    priority_filter: Optional[TaskPriority] = Query(None),
-    assigned_to_employee_id: Optional[int] = Query(None),
-    project_id: Optional[int] = Query(None, description="Filter tasks by project ID"),
-    only_mine: bool = Query(False, description="Employees: limit to tasks assigned to me"),
+@router.post("/query", response_model=PaginatedResponse[TaskResponse])
+async def query_tasks(
+    pagination_request: PaginationRequest,
     current_user: User = Depends(get_current_authenticated_user),
     db: Session = Depends(get_database_session),
 ):
-    only_mine_employee_id = None
-    if only_mine and current_user.role == UserRole.EMPLOYEE and current_user.employee_id:
-        only_mine_employee_id = current_user.employee_id
-
-    items, total = TaskService.list_tasks(
-        db=db,
-        company_id=current_user.company_id,
-        page=page,
-        limit=limit,
-        status_filter=status_filter,
-        priority_filter=priority_filter,
-        assigned_to_employee_id=assigned_to_employee_id,
-        project_id=project_id,
-        only_mine_employee_id=only_mine_employee_id,
-    )
-
-    return PaginatedResponse[TaskResponse](
-        total=total,
-        page=page,
-        limit=limit,
-        items=[TaskResponse.model_validate(t) for t in items],
-    )
+    """
+    Query tasks with pagination, filtering, and sorting.
+    Uses POST method with pagination request payload.
+    """
+    # Build base query
+    query = db.query(Task).filter(Task.company_id == current_user.company_id)
+    
+    # For employees, optionally filter to only their tasks
+    # This can be done via filter in the request payload
+    # If employee wants only their tasks, they can add filter: [{"field": "assigned_to_employee_id", "operator": "eq", "value": employee_id}]
+    
+    # Apply pagination, filters, and sorting
+    items, pagination_info = paginate_query(query, pagination_request, Task)
+    
+    # Create paginated response
+    return create_paginated_response(items, pagination_info, TaskResponse)
 
 
 @router.get("/{task_id}", response_model=TaskResponse)

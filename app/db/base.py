@@ -14,3 +14,4 @@ from app.api.v1.models.employee_model import Employee  # noqa
 from app.api.v1.models.user_model import User  # noqa
 from app.api.v1.models.project_model import Project  # noqa
 from app.api.v1.models.task_model import Task  # noqa
+from app.api.v1.models.attendance_model import Attendance  # noqa

@@ -38,6 +38,8 @@ class Employee(Base):
     company = relationship("Company", back_populates="employees")
     department = relationship("Department", back_populates="employees")
     user = relationship("User", back_populates="employee", foreign_keys="User.employee_id", uselist=False)
+    leave_requests = relationship("LeaveRequest", back_populates="employee", cascade="all, delete-orphan")
+    leave_balances = relationship("LeaveBalance", back_populates="employee", cascade="all, delete-orphan")
     
     @property
     def full_name(self):

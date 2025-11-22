@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.routes import auth, employees, departments, tasks, projects, attendance, ai_chat, vector_sync
+from app.api.v1.routes import auth, employees, departments, tasks, projects, attendance, ai_chat, vector_sync, leaves
 
 api_router = APIRouter()
 
@@ -12,5 +12,6 @@ api_router.include_router(projects.router)
 api_router.include_router(attendance.router)
 api_router.include_router(ai_chat.router)
 api_router.include_router(vector_sync.router)
+api_router.include_router(leaves.router)
 
 

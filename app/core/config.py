@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     PROJECT_NAME: str = "HRMS Backend"
     
+    # OpenAI Settings
+    OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key for AI chatbot")
+    OPENAI_MODEL: str = "gpt-3.5-turbo"  # Use cheaper model for token efficiency
+    
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_file=".env",

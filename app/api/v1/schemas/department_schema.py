@@ -26,6 +26,7 @@ class DepartmentResponse(DepartmentBase):
     id: int
     company_id: int
     is_active: bool
+    member_count: Optional[int] = Field(None, description="Number of active employees in this department")
     created_at: datetime
     updated_at: datetime
     

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 
 from app.db.session import get_database_session
@@ -16,6 +17,7 @@ from app.api.v1.schemas.department_schema import (
 from app.api.v1.schemas.user_schema import MessageResponse
 from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
 from app.api.v1.models.department_model import Department
+from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.user_model import User
 from app.api.v1.dependencies import get_current_authenticated_user, require_admin_role
 from app.api.v1.services.department_service import DepartmentService
@@ -54,7 +56,10 @@ async def create_new_department(
     db.commit()
     db.refresh(new_department)
     
-    return DepartmentResponse.model_validate(new_department)
+    # New department has 0 members
+    dept_dict = DepartmentResponse.model_validate(new_department).model_dump()
+    dept_dict['member_count'] = 0
+    return DepartmentResponse(**dept_dict)
 
 
 @router.post("/query", response_model=PaginatedResponse[DepartmentResponse])
@@ -68,6 +73,7 @@ async def query_departments(
     Uses POST method with pagination request payload.
     Admins see all departments in their company.
     Employees see only departments they have been granted access to.
+    Returns member_count (number of active employees) for each department.
     """
     # Get accessible departments query
     from app.api.v1.models.user_model import UserRole
@@ -88,8 +94,38 @@ async def query_departments(
     # Apply pagination, filters, and sorting
     items, pagination_info = paginate_query(query, pagination_request, Department)
     
-    # Create paginated response
-    return create_paginated_response(items, pagination_info, DepartmentResponse)
+    # Get all department IDs to count members efficiently
+    department_ids = [dept.id for dept in items]
+    
+    # Count employees per department in a single query (more efficient)
+    member_counts = {}
+    if department_ids:
+        counts = db.query(
+            Employee.department_id,
+            func.count(Employee.id).label('count')
+        ).filter(
+            Employee.department_id.in_(department_ids),
+            Employee.company_id == current_user.company_id,
+            Employee.is_active == True,
+            Employee.deleted_at.is_(None)
+        ).group_by(Employee.department_id).all()
+        
+        member_counts = {dept_id: count for dept_id, count in counts}
+    
+    # Create response with member count for each department
+    department_responses = []
+    for dept in items:
+        member_count = member_counts.get(dept.id, 0)
+        dept_dict = DepartmentResponse.model_validate(dept).model_dump()
+        dept_dict['member_count'] = member_count
+        department_responses.append(DepartmentResponse(**dept_dict))
+    
+    # Create paginated response with updated items
+    pagination_info_dict = pagination_info.model_dump()
+    return PaginatedResponse(
+        items=department_responses,
+        pagination=pagination_info_dict
+    )
 
 
 @router.get("/{department_id}", response_model=DepartmentResponse)
@@ -102,6 +138,7 @@ async def get_department_by_id(
     Get a specific department by ID.
     Only accessible if the user has been granted access to this department.
     Admins have access to all departments in their company.
+    Returns member_count (number of active employees) for this department.
     """
     # Check if user has access to this department
     has_access = DepartmentService.check_department_access(
@@ -127,7 +164,18 @@ async def get_department_by_id(
             detail="Department not found"
         )
     
-    return DepartmentResponse.model_validate(department)
+    # Count active employees in this department (excluding soft-deleted)
+    member_count = db.query(func.count(Employee.id)).filter(
+        Employee.department_id == department_id,
+        Employee.company_id == current_user.company_id,
+        Employee.is_active == True,
+        Employee.deleted_at.is_(None)
+    ).scalar() or 0
+    
+    # Create response with member count
+    dept_dict = DepartmentResponse.model_validate(department).model_dump()
+    dept_dict['member_count'] = member_count
+    return DepartmentResponse(**dept_dict)
 
 
 @router.put("/{department_id}", response_model=DepartmentResponse)
@@ -157,7 +205,18 @@ async def update_department_information(
     db.commit()
     db.refresh(department)
     
-    return DepartmentResponse.model_validate(department)
+    # Count active employees in this department (excluding soft-deleted)
+    member_count = db.query(func.count(Employee.id)).filter(
+        Employee.department_id == department_id,
+        Employee.company_id == current_user.company_id,
+        Employee.is_active == True,
+        Employee.deleted_at.is_(None)
+    ).scalar() or 0
+    
+    # Create response with member count
+    dept_dict = DepartmentResponse.model_validate(department).model_dump()
+    dept_dict['member_count'] = member_count
+    return DepartmentResponse(**dept_dict)
 
 
 @router.delete("/{department_id}", response_model=MessageResponse)

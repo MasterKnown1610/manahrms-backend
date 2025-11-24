@@ -16,3 +16,4 @@ from app.api.v1.models.project_model import Project  # noqa
 from app.api.v1.models.task_model import Task  # noqa
 from app.api.v1.models.attendance_model import Attendance  # noqa
 from app.api.v1.models.vector_store_model import VectorStore  # noqa
+from app.api.v1.models.leave_model import LeaveType, LeaveRequest, LeaveBalance  # noqa

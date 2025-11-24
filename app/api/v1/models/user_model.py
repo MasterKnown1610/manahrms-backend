@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -16,12 +16,16 @@ class User(Base):
     """
     User model for authentication and authorization.
     Supports both company admins and employees.
+    Email is unique per company, allowing the same email to be used across different companies.
     """
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint('company_id', 'email', name='uq_user_company_email'),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
-    email = Column(String(255), unique=True, index=True, nullable=False)
+    email = Column(String(255), nullable=False, index=True)
     username = Column(String(100), unique=True, index=True, nullable=False)
     full_name = Column(String(255), nullable=False)
     hashed_password = Column(String(255), nullable=False)

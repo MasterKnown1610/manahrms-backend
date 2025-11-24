@@ -20,7 +20,10 @@ def initialize_database_on_startup():
             'projects',
             'tasks',
             'attendances',
-            'vector_store'  # For RAG with pgvector
+            'vector_store',  # For RAG with pgvector
+            'leave_types',
+            'leave_requests',
+            'leave_balances'  # Leave management
         ]
         
         # Check for missing tables

@@ -50,8 +50,11 @@ async def query_employees(
     Query employees with pagination, filtering, and sorting.
     Uses POST method with pagination request payload.
     """
-    # Build base query
-    query = db.query(Employee).filter(Employee.company_id == current_user.company_id)
+    # Build base query - exclude soft-deleted employees
+    query = db.query(Employee).filter(
+        Employee.company_id == current_user.company_id,
+        Employee.deleted_at.is_(None)
+    )
     
     # Apply pagination, filters, and sorting
     items, pagination_info = paginate_query(query, pagination_request, Employee)
@@ -105,6 +108,6 @@ async def deactivate_employee(
     )
     
     return MessageResponse(
-        message=f"Employee {employee_id} has been deactivated successfully"
+        message=f"Employee {employee_id} has been deleted successfully. The email can now be reused in another company."
     )
 

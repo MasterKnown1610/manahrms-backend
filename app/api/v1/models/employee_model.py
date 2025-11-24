@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Date, Numeric
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Date, Numeric, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
@@ -9,8 +9,12 @@ class Employee(Base):
     """
     Employee model for storing employee information.
     Each employee belongs to a company and optionally has a user account for portal access.
+    Email is unique per company, allowing the same email to be used across different companies.
     """
     __tablename__ = "employees"
+    __table_args__ = (
+        UniqueConstraint('company_id', 'email', name='uq_employee_company_email'),
+    )
     
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -20,7 +24,7 @@ class Employee(Base):
     employee_code = Column(String(50), unique=True, index=True, nullable=False)
     first_name = Column(String(100), nullable=False)
     last_name = Column(String(100), nullable=False)
-    email = Column(String(255), unique=True, index=True, nullable=False)
+    email = Column(String(255), nullable=False, index=True)
     phone = Column(String(20), nullable=True)
     date_of_birth = Column(Date, nullable=True)
     
@@ -31,6 +35,7 @@ class Employee(Base):
     
     # Status
     is_active = Column(Boolean, default=True)
+    deleted_at = Column(DateTime, nullable=True, index=True)  # Soft delete timestamp
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

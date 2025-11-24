@@ -41,7 +41,7 @@ class AuthService:
                 error_code="COMPANY_EMAIL_EXISTS"
             )
         
-        # Check if admin username already exists
+        # Check if admin username already exists (username is globally unique)
         existing_username = db.query(User).filter(
             User.username == company_data.admin_username
         ).first()
@@ -52,16 +52,9 @@ class AuthService:
                 error_code="USERNAME_EXISTS"
             )
         
-        # Check if admin email already exists
-        existing_admin_email = db.query(User).filter(
-            User.email == company_data.admin_email
-        ).first()
-        if existing_admin_email:
-            raise_http_exception(
-                message="Admin email already registered",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error_code="ADMIN_EMAIL_EXISTS"
-            )
+        # Note: Admin email uniqueness is enforced per company via database constraint
+        # Since we're creating a new company, there won't be any users with this company_id yet,
+        # so no need to check email uniqueness here
         
         try:
             company_code = generate_unique_company_code(db)

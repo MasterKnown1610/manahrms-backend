@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 
 from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.user_model import User, UserRole
@@ -13,7 +13,10 @@ from app.core.security import hash_password_for_storage
 def generate_unique_employee_code_for_company(db: Session, company_id: int) -> str:
     last_employee = (
         db.query(Employee)
-        .filter(Employee.company_id == company_id)
+        .filter(
+            Employee.company_id == company_id,
+            Employee.deleted_at.is_(None)  # Only consider non-deleted employees
+        )
         .order_by(Employee.id.desc())
         .first()
     )
@@ -60,13 +63,16 @@ class EmployeeService:
                     employee_code = generate_unique_employee_code_for_company(db, company_id)
                 attempt += 1
         
+        # Check if email already exists for this company (excluding soft-deleted employees)
         existing_email = db.query(Employee).filter(
-            Employee.email == employee_data.email
+            Employee.email == employee_data.email,
+            Employee.company_id == company_id,
+            Employee.deleted_at.is_(None)  # Only check non-deleted employees
         ).first()
         if existing_email:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Employee email already registered"
+                detail="Employee email already registered in this company"
             )
         
         if employee_data.department_id:
@@ -137,7 +143,8 @@ class EmployeeService:
     def get_employee_by_id(db: Session, employee_id: int, company_id: int) -> Employee:
         employee = db.query(Employee).filter(
             Employee.id == employee_id,
-            Employee.company_id == company_id
+            Employee.company_id == company_id,
+            Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
         ).first()
         
         if not employee:
@@ -156,7 +163,10 @@ class EmployeeService:
         limit: int = 100,
         is_active: Optional[bool] = None
     ) -> List[Employee]:
-        query = db.query(Employee).filter(Employee.company_id == company_id)
+        query = db.query(Employee).filter(
+            Employee.company_id == company_id,
+            Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
+        )
         
         if is_active is not None:
             query = query.filter(Employee.is_active == is_active)
@@ -174,6 +184,21 @@ class EmployeeService:
         
         update_data = employee_data.model_dump(exclude_unset=True)
         
+        # If email is being updated, check uniqueness per company
+        if 'email' in update_data:
+            new_email = update_data['email']
+            existing_email = db.query(Employee).filter(
+                Employee.email == new_email,
+                Employee.company_id == company_id,
+                Employee.id != employee_id,  # Exclude current employee
+                Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
+            ).first()
+            if existing_email:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Employee email already registered in this company"
+                )
+        
         for field, value in update_data.items():
             setattr(employee, field, value)
         
@@ -184,9 +209,17 @@ class EmployeeService:
     
     @staticmethod
     def delete_employee(db: Session, employee_id: int, company_id: int) -> None:
+        """
+        Soft delete an employee by setting deleted_at timestamp.
+        This allows the same email to be reused in another company.
+        """
         employee = EmployeeService.get_employee_by_id(db, employee_id, company_id)
+        
+        # Soft delete: set deleted_at timestamp
+        employee.deleted_at = datetime.utcnow()
         employee.is_active = False
         
+        # Also deactivate associated user account
         if employee.user:
             employee.user.is_active = False
         
@@ -196,6 +229,7 @@ class EmployeeService:
     def get_employee_by_code(db: Session, employee_code: str, company_id: int) -> Optional[Employee]:
         return db.query(Employee).filter(
             Employee.employee_code == employee_code,
-            Employee.company_id == company_id
+            Employee.company_id == company_id,
+            Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
         ).first()
 

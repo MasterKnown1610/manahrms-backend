@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     # JWT Authentication Settings
     SECRET_KEY: str = "your-secret-key-change-in-production-09876543210"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 720  # 1 day (12 hours * 60 minutes)
     
     # API Settings
     API_V1_PREFIX: str = "/api/v1"

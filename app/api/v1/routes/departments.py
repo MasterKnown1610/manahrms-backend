@@ -121,10 +121,11 @@ async def query_departments(
         department_responses.append(DepartmentResponse(**dept_dict))
     
     # Create paginated response with updated items
-    pagination_info_dict = pagination_info.model_dump()
-    return PaginatedResponse(
-        items=department_responses,
-        pagination=pagination_info_dict
+    # Note: PaginatedResponse expects 'data' field, not 'items'
+    # Must specify generic type parameter
+    return PaginatedResponse[DepartmentResponse](
+        data=department_responses,
+        pagination=pagination_info
     )
 
 

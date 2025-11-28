@@ -37,12 +37,22 @@ class ProjectInfo(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class EmployeeInfo(BaseModel):
+    """Schema for employee information in task response"""
+    id: int
+    employee_code: str
+    full_name: str
+    
+    model_config = {"from_attributes": True}
+
+
 class TaskResponse(TaskBase):
     id: int
     company_id: int
     status: TaskStatus
     created_by_user_id: Optional[int] = None
     project: Optional[ProjectInfo] = None
+    assigned_to_employee: Optional[EmployeeInfo] = None
     created_at: datetime
     updated_at: datetime
 

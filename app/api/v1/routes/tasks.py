@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 
 from app.db.session import get_database_session
@@ -31,7 +31,17 @@ async def create_new_task(
         creator_user_id=current_user.id,
         data=data,
     )
-    return TaskResponse.model_validate(task)
+    # Reload with relationships
+    task_with_relations = (
+        db.query(Task)
+        .options(
+            joinedload(Task.assigned_to_employee),
+            joinedload(Task.project)
+        )
+        .filter(Task.id == task.id, Task.company_id == current_user.company_id)
+        .first()
+    )
+    return TaskResponse.model_validate(task_with_relations)
 
 
 @router.post("/query", response_model=PaginatedResponse[TaskResponse])
@@ -44,8 +54,11 @@ async def query_tasks(
     Query tasks with pagination, filtering, and sorting.
     Uses POST method with pagination request payload.
     """
-    # Build base query
-    query = db.query(Task).filter(Task.company_id == current_user.company_id)
+    # Build base query with eager loading of relationships
+    query = db.query(Task).options(
+        joinedload(Task.assigned_to_employee),
+        joinedload(Task.project)
+    ).filter(Task.company_id == current_user.company_id)
     
     # For employees, optionally filter to only their tasks
     # This can be done via filter in the request payload
@@ -64,7 +77,18 @@ async def get_task_by_id(
     current_user: User = Depends(get_current_authenticated_user),
     db: Session = Depends(get_database_session),
 ):
-    task = TaskService.get_task_by_id(db, current_user.company_id, task_id)
+    # Load task with relationships eagerly
+    task = (
+        db.query(Task)
+        .options(
+            joinedload(Task.assigned_to_employee),
+            joinedload(Task.project)
+        )
+        .filter(Task.id == task_id, Task.company_id == current_user.company_id)
+        .first()
+    )
+    if not task:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return TaskResponse.model_validate(task)
 
 
@@ -85,7 +109,17 @@ async def update_task_information(
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employees cannot reassign tasks")
 
     updated = TaskService.update_task(db, current_user.company_id, task_id, data)
-    return TaskResponse.model_validate(updated)
+    # Reload with relationships
+    task_with_relations = (
+        db.query(Task)
+        .options(
+            joinedload(Task.assigned_to_employee),
+            joinedload(Task.project)
+        )
+        .filter(Task.id == task_id, Task.company_id == current_user.company_id)
+        .first()
+    )
+    return TaskResponse.model_validate(task_with_relations)
 
 
 @router.post("/{task_id}/close", response_model=TaskResponse)
@@ -101,6 +135,16 @@ async def close_task_by_id(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to close this task")
 
     closed = TaskService.close_task(db, current_user.company_id, task_id)
-    return TaskResponse.model_validate(closed)
+    # Reload with relationships
+    task_with_relations = (
+        db.query(Task)
+        .options(
+            joinedload(Task.assigned_to_employee),
+            joinedload(Task.project)
+        )
+        .filter(Task.id == task_id, Task.company_id == current_user.company_id)
+        .first()
+    )
+    return TaskResponse.model_validate(task_with_relations)
 
 

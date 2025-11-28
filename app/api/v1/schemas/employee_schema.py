@@ -61,3 +61,12 @@ class EmployeeWithCredentials(BaseModel):
     
     model_config = {"from_attributes": True}
 
+
+class EmployeeDropdownResponse(BaseModel):
+    """Simplified schema for employee dropdown lists"""
+    id: int
+    employee_code: str
+    full_name: str
+    
+    model_config = {"from_attributes": True}
+

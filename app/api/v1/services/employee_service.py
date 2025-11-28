@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from fastapi import HTTPException, status
 from typing import List, Optional
 from datetime import date, datetime
@@ -232,4 +233,36 @@ class EmployeeService:
             Employee.company_id == company_id,
             Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
         ).first()
+    
+    @staticmethod
+    def get_employees_for_dropdown(
+        db: Session, 
+        company_id: int, 
+        search: Optional[str] = None,
+        limit: int = 50
+    ) -> List[Employee]:
+        """
+        Get active employees for dropdown selection (e.g., task assignment).
+        Returns only active, non-deleted employees ordered by name.
+        Supports search by name (first_name, last_name) or employee_code.
+        Limited to prevent returning huge datasets.
+        """
+        query = db.query(Employee).filter(
+            Employee.company_id == company_id,
+            Employee.is_active == True,
+            Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
+        )
+        
+        # Apply search filter if provided
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Employee.first_name.ilike(search_pattern),
+                    Employee.last_name.ilike(search_pattern),
+                    Employee.employee_code.ilike(search_pattern)
+                )
+            )
+        
+        return query.order_by(Employee.first_name, Employee.last_name).limit(limit).all()
 

@@ -7,7 +7,8 @@ from app.api.v1.schemas.employee_schema import (
     EmployeeCreate,
     EmployeeUpdate,
     EmployeeResponse,
-    EmployeeWithCredentials
+    EmployeeWithCredentials,
+    EmployeeDropdownResponse
 )
 from app.api.v1.schemas.user_schema import MessageResponse
 from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
@@ -61,6 +62,36 @@ async def query_employees(
     
     # Create paginated response
     return create_paginated_response(items, pagination_info, EmployeeResponse)
+
+
+@router.get("/dropdown", response_model=List[EmployeeDropdownResponse])
+async def get_employees_dropdown(
+    search: Optional[str] = Query(None, description="Search by employee name or code"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of results to return"),
+    current_user = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_database_session)
+):
+    """
+    Get a simplified list of active employees for dropdown selection.
+    Useful for task assignment and other selection scenarios.
+    
+    - Returns only active, non-deleted employees ordered by name
+    - Supports search by name (first_name, last_name) or employee_code
+    - Limited to prevent returning huge datasets (default: 50, max: 100)
+    - Use search parameter to filter results as user types
+    """
+    employees = EmployeeService.get_employees_for_dropdown(
+        db=db,
+        company_id=current_user.company_id,
+        search=search,
+        limit=limit
+    )
+    
+    return [EmployeeDropdownResponse(
+        id=emp.id,
+        employee_code=emp.employee_code,
+        full_name=emp.full_name
+    ) for emp in employees]
 
 
 @router.get("/{employee_id}", response_model=EmployeeResponse)

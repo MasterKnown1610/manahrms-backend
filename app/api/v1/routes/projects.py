@@ -10,7 +10,8 @@ from app.api.v1.schemas.project_schema import (
     ProjectCreate,
     ProjectUpdate,
     ProjectResponse,
-    ProjectWithTasksResponse
+    ProjectWithTasksResponse,
+    ProjectDropdownResponse
 )
 from app.api.v1.schemas.user_schema import MessageResponse
 from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
@@ -78,6 +79,36 @@ async def get_my_projects(
     )
     
     return [ProjectResponse.model_validate(project) for project in projects]
+
+
+@router.get("/dropdown", response_model=List[ProjectDropdownResponse])
+async def get_projects_dropdown(
+    search: Optional[str] = Query(None, description="Search by project name or client"),
+    limit: int = Query(50, ge=1, le=100, description="Maximum number of results to return"),
+    current_user: User = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_database_session)
+):
+    """
+    Get a simplified list of active projects for dropdown selection.
+    Useful for task assignment and other selection scenarios.
+    
+    - Returns only active projects ordered by name
+    - Supports search by project name or client name
+    - Limited to prevent returning huge datasets (default: 50, max: 100)
+    - Use search parameter to filter results as user types
+    """
+    projects = ProjectService.get_projects_for_dropdown(
+        db=db,
+        company_id=current_user.company_id,
+        search=search,
+        limit=limit
+    )
+    
+    return [ProjectDropdownResponse(
+        id=proj.id,
+        name=proj.name,
+        client=proj.client
+    ) for proj in projects]
 
 
 @router.get("/{project_id}", response_model=ProjectWithTasksResponse)

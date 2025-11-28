@@ -1,6 +1,6 @@
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, or_
 from fastapi import HTTPException, status
 from datetime import date
 
@@ -227,4 +227,34 @@ class ProjectService:
             Project.project_lead_id == user_id,
             Project.is_active == True
         ).all()
+    
+    @staticmethod
+    def get_projects_for_dropdown(
+        db: Session,
+        company_id: int,
+        search: Optional[str] = None,
+        limit: int = 50
+    ) -> List[Project]:
+        """
+        Get active projects for dropdown selection (e.g., task assignment).
+        Returns only active projects ordered by name.
+        Supports search by project name or client name.
+        Limited to prevent returning huge datasets.
+        """
+        query = db.query(Project).filter(
+            Project.company_id == company_id,
+            Project.is_active == True
+        )
+        
+        # Apply search filter if provided
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Project.name.ilike(search_pattern),
+                    Project.client.ilike(search_pattern)
+                )
+            )
+        
+        return query.order_by(Project.name).limit(limit).all()
 

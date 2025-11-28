@@ -75,3 +75,12 @@ class ProjectWithTasksResponse(ProjectResponse):
     
     model_config = {"from_attributes": True}
 
+
+class ProjectDropdownResponse(BaseModel):
+    """Simplified schema for project dropdown lists"""
+    id: int
+    name: str
+    client: str
+    
+    model_config = {"from_attributes": True}
+

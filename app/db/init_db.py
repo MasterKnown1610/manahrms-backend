@@ -23,7 +23,10 @@ def initialize_database_on_startup():
             'vector_store',  # For RAG with pgvector
             'leave_types',
             'leave_requests',
-            'leave_balances'  # Leave management
+            'leave_balances',  # Leave management
+            'chat_rooms',  # Chat functionality
+            'chat_room_members',  # Chat room members
+            'chat_messages'  # Chat messages
         ]
         
         # Check for missing tables

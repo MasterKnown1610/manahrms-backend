@@ -105,3 +105,54 @@ class DashboardResponse(BaseModel):
     upcoming_deadlines: List[UpcomingDeadline]
     recent_activities: List[RecentActivity]
 
+
+# Employee Dashboard Schemas
+class TodayStatus(BaseModel):
+    """Today's attendance status"""
+    is_present: bool
+    is_checked_in: bool
+    is_checked_out: bool
+    punch_in_time: Optional[str]
+    punch_out_time: Optional[str]
+    work_duration_hours: Optional[float]
+
+
+class LeaveBalanceItem(BaseModel):
+    """Leave balance for a specific leave type"""
+    leave_type_id: int
+    leave_type_name: Optional[str]
+    total_days: float
+    used_days: float
+    pending_days: float
+    available_days: float
+    carried_forward_days: float
+
+
+class LeaveBalanceInfo(BaseModel):
+    """Leave balance information"""
+    total_available_days: float
+    by_leave_type: List[LeaveBalanceItem]
+
+
+class MyProject(BaseModel):
+    """Project information for employee"""
+    id: int
+    name: str
+    client: str
+    target_date: Optional[str]
+    is_active: bool
+    tasks_count: int
+
+
+class EmployeeDashboardResponse(BaseModel):
+    """Employee dashboard response"""
+    my_tasks: int
+    today_status: TodayStatus
+    leave_balance: LeaveBalanceInfo
+    my_projects: List[MyProject]
+    open_tasks: int
+    in_progress: int
+    completed: int
+    recent_tasks: List[RecentTask]
+    upcoming_deadlines: List[UpcomingDeadline]
+

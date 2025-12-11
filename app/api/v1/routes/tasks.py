@@ -111,7 +111,9 @@ async def query_tasks(
     """
     Query tasks with pagination, filtering, and sorting.
     Uses POST method with pagination request payload.
-    Admins can see all tasks, employees should use /my-tasks endpoint.
+    
+    For employees: Automatically filters to show only tasks assigned to them.
+    For admins: Shows all tasks in the company (can be further filtered via request payload).
     """
     # Build base query with eager loading of relationships
     query = db.query(Task).options(
@@ -119,9 +121,15 @@ async def query_tasks(
         joinedload(Task.project)
     ).filter(Task.company_id == current_user.company_id)
     
-    # For employees, optionally filter to only their tasks
-    # This can be done via filter in the request payload
-    # If employee wants only their tasks, they can add filter: [{"field": "assigned_to_employee_id", "operator": "eq", "value": employee_id}]
+    # For employees, automatically filter to only their tasks
+    if current_user.role == UserRole.EMPLOYEE:
+        if not current_user.employee_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="User is not associated with an employee"
+            )
+        # Automatically filter by employee's assigned tasks
+        query = query.filter(Task.assigned_to_employee_id == current_user.employee_id)
     
     # Apply pagination, filters, and sorting
     items, pagination_info = paginate_query(query, pagination_request, Task)

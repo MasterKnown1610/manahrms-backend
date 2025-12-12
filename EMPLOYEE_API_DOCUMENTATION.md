@@ -413,7 +413,7 @@ Get paginated list of tasks with advanced filtering and sorting.
 Authorization: Bearer <access_token>
 ```
 
-**Request Body (To Get Only Your Tasks):**
+**Request Body:**
 
 ```json
 {
@@ -427,36 +427,14 @@ Authorization: Bearer <access_token>
   ],
   "filter": [
     {
-      "field": "assigned_to_employee_id",
+      "field": "status",
       "operator": "eq",
-      "value": 1
+      "value": "open"
     },
     {
-      "field": "status",
+      "field": "priority",
       "operator": "eq",
-      "value": "open"
-    }
-  ]
-}
-```
-
-**Request Body (To Get All Tasks in Company - Not Recommended):**
-
-```json
-{
-  "page": 1,
-  "page_size": 20,
-  "sort": [
-    {
-      "field": "due_date",
-      "order": "asc"
-    }
-  ],
-  "filter": [
-    {
-      "field": "status",
-      "operator": "eq",
-      "value": "open"
+      "value": "high"
     }
   ]
 }
@@ -464,13 +442,12 @@ Authorization: Bearer <access_token>
 
 **Important Notes:**
 
-⚠️ **Current Behavior:**
+✅ **Automatic Filtering:**
 
-- The API currently returns **ALL tasks** in your company if you don't add a filter
-- To see only **your tasks**, you **MUST** add a filter with your `assigned_to_employee_id`
-- You can get your `employee_id` from the `/auth/me` endpoint (it's in the `employee_id` field)
-
-**Recommended:** Always filter by your own `assigned_to_employee_id` to see only tasks assigned to you.
+- The API **automatically filters** to show only **your tasks** based on your token
+- You don't need to manually filter by `assigned_to_employee_id` - it's done automatically!
+- You can still add additional filters for status, priority, due_date, etc.
+- The `assigned_to_employee_id` filter is automatically applied, so you'll only see tasks assigned to you
 
 **Response:** `200 OK`
 
@@ -2279,7 +2256,7 @@ curl -X GET "https://manahrms-backend.onrender.com/api/v1/tasks/my-tasks?page=1&
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
-### Get My Tasks (Advanced Query)
+### Query My Tasks (Advanced)
 
 ```bash
 curl -X POST "https://manahrms-backend.onrender.com/api/v1/tasks/query" \
@@ -2290,13 +2267,21 @@ curl -X POST "https://manahrms-backend.onrender.com/api/v1/tasks/query" \
     "page_size": 20,
     "filter": [
       {
-        "field": "assigned_to_employee_id",
+        "field": "status",
         "operator": "eq",
-        "value": 1
+        "value": "open"
+      }
+    ],
+    "sort": [
+      {
+        "field": "due_date",
+        "order": "asc"
       }
     ]
   }'
 ```
+
+**Note:** The API automatically filters to your tasks - no need to include `assigned_to_employee_id` in the filter!
 
 ### Punch In
 

@@ -3,12 +3,16 @@ from sqlalchemy import or_
 from fastapi import HTTPException, status
 from typing import List, Optional
 from datetime import date, datetime
+import logging
 
 from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.user_model import User, UserRole
 from app.api.v1.models.department_model import Department
 from app.api.v1.schemas.employee_schema import EmployeeCreate, EmployeeUpdate
 from app.core.security import hash_password_for_storage
+from app.api.v1.services.vector_sync_service import VectorSyncService
+
+logger = logging.getLogger(__name__)
 
 
 def generate_unique_employee_code_for_company(db: Session, company_id: int) -> str:
@@ -131,6 +135,14 @@ class EmployeeService:
             db.refresh(new_employee)
             db.refresh(employee_user)
             
+            # Sync to vector database
+            try:
+                sync_service = VectorSyncService()
+                sync_service.sync_employee(db, new_employee.id)
+            except Exception as e:
+                logger.error(f"Failed to sync employee {new_employee.id} to vector store: {str(e)}")
+                # Don't fail the main operation if vector sync fails
+            
             return new_employee, employee_user, employee_data.initial_password
             
         except Exception as e:
@@ -205,6 +217,14 @@ class EmployeeService:
         
         db.commit()
         db.refresh(employee)
+        
+        # Sync to vector database after update
+        try:
+            sync_service = VectorSyncService()
+            sync_service.sync_employee(db, employee.id)
+        except Exception as e:
+            logger.error(f"Failed to sync employee {employee.id} to vector store after update: {str(e)}")
+            # Don't fail the main operation if vector sync fails
         
         return employee
     

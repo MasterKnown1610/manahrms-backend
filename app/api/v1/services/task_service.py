@@ -1,11 +1,15 @@
 from typing import List, Optional, Tuple
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
+import logging
 
 from app.api.v1.models.task_model import Task, TaskStatus, TaskPriority
 from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.project_model import Project
 from app.api.v1.schemas.task_schema import TaskCreate, TaskUpdate
+from app.api.v1.services.vector_sync_service import VectorSyncService
+
+logger = logging.getLogger(__name__)
 
 
 class TaskService:
@@ -60,6 +64,15 @@ class TaskService:
         db.add(task)
         db.commit()
         db.refresh(task)
+        
+        # Sync to vector database
+        try:
+            sync_service = VectorSyncService()
+            sync_service.sync_task(db, task.id)
+        except Exception as e:
+            logger.error(f"Failed to sync task {task.id} to vector store: {str(e)}")
+            # Don't fail the main operation if vector sync fails
+        
         return task
 
     @staticmethod
@@ -151,6 +164,15 @@ class TaskService:
 
         db.commit()
         db.refresh(task)
+        
+        # Sync to vector database after update
+        try:
+            sync_service = VectorSyncService()
+            sync_service.sync_task(db, task.id)
+        except Exception as e:
+            logger.error(f"Failed to sync task {task.id} to vector store after update: {str(e)}")
+            # Don't fail the main operation if vector sync fails
+        
         return task
 
     @staticmethod
@@ -159,6 +181,15 @@ class TaskService:
         task.status = TaskStatus.CLOSED
         db.commit()
         db.refresh(task)
+        
+        # Sync to vector database after status change
+        try:
+            sync_service = VectorSyncService()
+            sync_service.sync_task(db, task.id)
+        except Exception as e:
+            logger.error(f"Failed to sync task {task.id} to vector store after close: {str(e)}")
+            # Don't fail the main operation if vector sync fails
+        
         return task
 
 

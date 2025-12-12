@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
+import logging
 
 from app.db.session import get_database_session
 from app.api.v1.schemas.department_schema import (
@@ -21,7 +22,10 @@ from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.user_model import User
 from app.api.v1.dependencies import get_current_authenticated_user, require_admin_role
 from app.api.v1.services.department_service import DepartmentService
+from app.api.v1.services.vector_sync_service import VectorSyncService
 from app.api.v1.utils.pagination import paginate_query, create_paginated_response
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/departments", tags=["Departments"])
@@ -55,6 +59,14 @@ async def create_new_department(
     db.add(new_department)
     db.commit()
     db.refresh(new_department)
+    
+    # Sync to vector database
+    try:
+        sync_service = VectorSyncService()
+        sync_service.sync_department(db, new_department.id)
+    except Exception as e:
+        logger.error(f"Failed to sync department {new_department.id} to vector store: {str(e)}")
+        # Don't fail the main operation if vector sync fails
     
     # New department has 0 members
     dept_dict = DepartmentResponse.model_validate(new_department).model_dump()
@@ -206,6 +218,14 @@ async def update_department_information(
     db.commit()
     db.refresh(department)
     
+    # Sync to vector database after update
+    try:
+        sync_service = VectorSyncService()
+        sync_service.sync_department(db, department.id)
+    except Exception as e:
+        logger.error(f"Failed to sync department {department.id} to vector store after update: {str(e)}")
+        # Don't fail the main operation if vector sync fails
+    
     # Count active employees in this department (excluding soft-deleted)
     member_count = db.query(func.count(Employee.id)).filter(
         Employee.department_id == department_id,
@@ -239,6 +259,14 @@ async def deactivate_department(
     
     department.is_active = False
     db.commit()
+    
+    # Sync to vector database after deactivation
+    try:
+        sync_service = VectorSyncService()
+        sync_service.sync_department(db, department.id)
+    except Exception as e:
+        logger.error(f"Failed to sync department {department.id} to vector store after deactivation: {str(e)}")
+        # Don't fail the main operation if vector sync fails
     
     return MessageResponse(
         message=f"Department '{department.name}' has been deactivated successfully"

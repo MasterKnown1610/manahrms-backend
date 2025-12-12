@@ -120,6 +120,17 @@ class AuthService:
             db.refresh(new_company)
             db.refresh(admin_user)
             
+            # Sync company to vector database
+            try:
+                from app.api.v1.services.vector_sync_service import VectorSyncService
+                import logging
+                logger = logging.getLogger(__name__)
+                sync_service = VectorSyncService()
+                sync_service.sync_company(db, new_company.id)
+            except Exception as e:
+                logger.error(f"Failed to sync company {new_company.id} to vector store: {str(e)}")
+                # Don't fail the main operation if vector sync fails
+            
             return new_company, admin_user
             
         except Exception as e:

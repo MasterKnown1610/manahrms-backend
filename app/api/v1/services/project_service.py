@@ -3,11 +3,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, or_
 from fastapi import HTTPException, status
 from datetime import date
+import logging
 
 from app.api.v1.models.project_model import Project
 from app.api.v1.models.user_model import User
 from app.api.v1.models.task_model import Task, TaskStatus
 from app.api.v1.schemas.project_schema import ProjectCreate, ProjectUpdate
+from app.api.v1.services.vector_sync_service import VectorSyncService
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectService:
@@ -63,6 +67,14 @@ class ProjectService:
         db.add(project)
         db.commit()
         db.refresh(project)
+        
+        # Sync to vector database
+        try:
+            sync_service = VectorSyncService()
+            sync_service.sync_project(db, project.id)
+        except Exception as e:
+            logger.error(f"Failed to sync project {project.id} to vector store: {str(e)}")
+            # Don't fail the main operation if vector sync fails
         
         return project
 
@@ -169,6 +181,14 @@ class ProjectService:
         db.commit()
         db.refresh(project)
         
+        # Sync to vector database after update
+        try:
+            sync_service = VectorSyncService()
+            sync_service.sync_project(db, project.id)
+        except Exception as e:
+            logger.error(f"Failed to sync project {project.id} to vector store after update: {str(e)}")
+            # Don't fail the main operation if vector sync fails
+        
         return project
 
     @staticmethod
@@ -185,6 +205,14 @@ class ProjectService:
         project.is_active = False
         db.commit()
         db.refresh(project)
+        
+        # Sync to vector database after deactivation
+        try:
+            sync_service = VectorSyncService()
+            sync_service.sync_project(db, project.id)
+        except Exception as e:
+            logger.error(f"Failed to sync project {project.id} to vector store after deactivation: {str(e)}")
+            # Don't fail the main operation if vector sync fails
         
         return project
 

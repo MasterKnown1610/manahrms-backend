@@ -23,8 +23,10 @@ class Attendance(Base):
     punch_in_time = Column(DateTime, nullable=True)
     punch_out_time = Column(DateTime, nullable=True)
     
-    # Work duration (calculated in hours, stored for quick access)
-    work_duration_hours = Column(Integer, nullable=True)  # Duration in minutes
+    # Work duration stored in MINUTES (despite the name "hours")
+    # Calculated when employee punches out: (punch_out_time - punch_in_time) in minutes
+    # To get hours: divide by 60.0
+    work_duration_hours = Column(Integer, nullable=True)  # Duration in MINUTES (naming is misleading)
     
     # Status flags
     is_present = Column(Boolean, default=False)  # True if employee punched in today

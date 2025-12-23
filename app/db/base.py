@@ -18,3 +18,7 @@ from app.api.v1.models.attendance_model import Attendance  # noqa
 from app.api.v1.models.vector_store_model import VectorStore  # noqa
 from app.api.v1.models.leave_model import LeaveType, LeaveRequest, LeaveBalance  # noqa
 from app.api.v1.models.chat_model import ChatRoom, ChatRoomMember, ChatMessage  # noqa  # noqa
+from app.api.v1.models.workflow_model import (  # noqa
+    Workflow, WorkflowNode, WorkflowEdge, ProjectWorkflow,
+    ProjectWorkflowUser, TaskStateHistory, SLADefinition, TaskSLATracking
+)

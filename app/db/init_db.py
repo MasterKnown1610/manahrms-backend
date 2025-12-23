@@ -26,7 +26,16 @@ def initialize_database_on_startup():
             'leave_balances',  # Leave management
             'chat_rooms',  # Chat functionality
             'chat_room_members',  # Chat room members
-            'chat_messages'  # Chat messages
+            'chat_messages',  # Chat messages
+            # Workflow system tables
+            'workflows',
+            'workflow_nodes',
+            'workflow_edges',
+            'project_workflows',
+            'project_workflow_users',
+            'task_state_history',
+            'sla_definitions',
+            'task_sla_tracking'
         ]
         
         # Check for missing tables

@@ -1,8 +1,17 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Date, Numeric, UniqueConstraint
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Date, Numeric, Text, UniqueConstraint, Enum
 from sqlalchemy.orm import relationship
 from datetime import datetime
+import enum
 
 from app.db.base import Base
+
+
+class Gender(str, enum.Enum):
+    """Gender enumeration"""
+    MALE = "male"
+    FEMALE = "female"
+    OTHER = "other"
+    PREFER_NOT_TO_SAY = "prefer_not_to_say"
 
 
 class Employee(Base):
@@ -27,6 +36,15 @@ class Employee(Base):
     email = Column(String(255), nullable=False, index=True)
     phone = Column(String(20), nullable=True)
     date_of_birth = Column(Date, nullable=True)
+    gender = Column(Enum(Gender), nullable=True)
+    
+    # Address Information
+    address = Column(Text, nullable=True)
+    city = Column(String(100), nullable=True)
+    pin_code = Column(String(10), nullable=True)
+    
+    # Additional Information
+    notes = Column(Text, nullable=True)
     
     # Employment Information
     position = Column(String(255), nullable=True)
@@ -45,6 +63,7 @@ class Employee(Base):
     user = relationship("User", back_populates="employee", foreign_keys="User.employee_id", uselist=False)
     leave_requests = relationship("LeaveRequest", back_populates="employee", cascade="all, delete-orphan")
     leave_balances = relationship("LeaveBalance", back_populates="employee", cascade="all, delete-orphan")
+    attachments = relationship("EmployeeAttachment", back_populates="employee", cascade="all, delete-orphan")
     
     @property
     def full_name(self):

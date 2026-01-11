@@ -20,6 +20,7 @@ def initialize_database_on_startup():
             'projects',
             'tasks',
             'attendances',
+            'employee_attachments',  # Employee file attachments
             'vector_store',  # For RAG with pgvector
             'leave_types',
             'leave_requests',
@@ -137,6 +138,23 @@ def initialize_database_on_startup():
                 # Check for project_id column in tasks table (if tasks table exists)
                 # This should be checked regardless of companies table status
                 current_tables = inspector.get_table_names()
+                
+                # Check for missing columns in employees table
+                employees_columns = []
+                employees_missing_columns = []
+                if 'employees' in current_tables:
+                    employees_columns = [col['name'] for col in inspector.get_columns('employees')]
+                    employees_required_columns = {
+                        'gender': 'gender',
+                        'address': 'TEXT',
+                        'city': 'VARCHAR(100)',
+                        'pin_code': 'VARCHAR(10)',
+                        'notes': 'TEXT'
+                    }
+                    
+                    for col_name in employees_required_columns.keys():
+                        if col_name not in employees_columns:
+                            employees_missing_columns.append(col_name)
                 tasks_updated = False
                 if 'tasks' in current_tables:
                     tasks_columns = [col['name'] for col in inspector.get_columns('tasks')]
@@ -176,7 +194,7 @@ def initialize_database_on_startup():
                             print("✅ Added project_id column to tasks table!")
                             tasks_updated = True
                 
-                if not missing_columns:
+                if not missing_columns and not employees_missing_columns:
                     if tasks_updated:
                         trans.commit()
                         return True
@@ -184,144 +202,203 @@ def initialize_database_on_startup():
                     trans.commit()
                     return True
                 
-                # Add missing columns
-                print(f"📝 Adding {len(missing_columns)} missing column(s)...")
-                
-                # Create CompanyType enum if it doesn't exist
-                if 'company_type' in missing_columns:
-                    print("   Creating CompanyType enum...")
-                    # Create enum if it doesn't exist (using DO block to handle if exists)
-                    conn.execute(text("""
-                        DO $$ BEGIN
-                            CREATE TYPE companytype AS ENUM (
-                                'Solo Proprietor',
-                                'Organization',
-                                'Private Limited',
-                                'LLP',
-                                'Partnership',
-                                'Public Limited',
-                                'Other'
-                            );
-                        EXCEPTION
-                            WHEN duplicate_object THEN null;
-                        END $$;
-                    """))
-                
-                # Add missing columns
-                for col_name in missing_columns:
-                    col_type = required_columns[col_name]
-                    print(f"   Adding column: {col_name} ({col_type})...")
+                # Add missing columns for companies table
+                if missing_columns:
+                    print(f"📝 Adding {len(missing_columns)} missing column(s) to companies table...")
                     
-                    if col_type == 'companytype':
-                        conn.execute(text(f"""
-                            ALTER TABLE companies 
-                            ADD COLUMN IF NOT EXISTS {col_name} {col_type};
+                    # Create CompanyType enum if it doesn't exist
+                    if 'company_type' in missing_columns:
+                        print("   Creating CompanyType enum...")
+                        # Create enum if it doesn't exist (using DO block to handle if exists)
+                        conn.execute(text("""
+                            DO $$ BEGIN
+                                CREATE TYPE companytype AS ENUM (
+                                    'Solo Proprietor',
+                                    'Organization',
+                                    'Private Limited',
+                                    'LLP',
+                                    'Partnership',
+                                    'Public Limited',
+                                    'Other'
+                                );
+                            EXCEPTION
+                                WHEN duplicate_object THEN null;
+                            END $$;
                         """))
-                    else:
-                        conn.execute(text(f"""
-                            ALTER TABLE companies 
-                            ADD COLUMN IF NOT EXISTS {col_name} {col_type};
+                    
+                    # Add missing columns
+                    for col_name in missing_columns:
+                        col_type = required_columns[col_name]
+                        print(f"   Adding column: {col_name} ({col_type})...")
+                        
+                        if col_type == 'companytype':
+                            conn.execute(text(f"""
+                                ALTER TABLE companies 
+                                ADD COLUMN IF NOT EXISTS {col_name} {col_type};
+                            """))
+                        else:
+                            conn.execute(text(f"""
+                                ALTER TABLE companies 
+                                ADD COLUMN IF NOT EXISTS {col_name} {col_type};
+                            """))
+                
+                # Add missing columns for employees table
+                if employees_missing_columns:
+                    print(f"📝 Adding {len(employees_missing_columns)} missing column(s) to employees table...")
+                    
+                    # Create Gender enum if it doesn't exist
+                    if 'gender' in employees_missing_columns:
+                        print("   Creating Gender enum...")
+                        conn.execute(text("""
+                            DO $$ BEGIN
+                                CREATE TYPE gender AS ENUM (
+                                    'male',
+                                    'female',
+                                    'other',
+                                    'prefer_not_to_say'
+                                );
+                            EXCEPTION
+                                WHEN duplicate_object THEN null;
+                            END $$;
                         """))
+                    
+                    # Add missing columns
+                    employees_required_columns = {
+                        'gender': 'gender',
+                        'address': 'TEXT',
+                        'city': 'VARCHAR(100)',
+                        'pin_code': 'VARCHAR(10)',
+                        'notes': 'TEXT'
+                    }
+                    
+                    for col_name in employees_missing_columns:
+                        col_type = employees_required_columns[col_name]
+                        print(f"   Adding column: {col_name} ({col_type})...")
+                        
+                        if col_type == 'gender':
+                            conn.execute(text(f"""
+                                ALTER TABLE employees 
+                                ADD COLUMN IF NOT EXISTS {col_name} {col_type};
+                            """))
+                        else:
+                            conn.execute(text(f"""
+                                ALTER TABLE employees 
+                                ADD COLUMN IF NOT EXISTS {col_name} {col_type};
+                            """))
                 
                 # Set default values for existing rows (only if there are any)
-                print("   Setting default values for existing rows...")
-                
-                # Check if there are any rows at all
-                result = conn.execute(text("SELECT COUNT(*) FROM companies;"))
-                total_rows = result.scalar()
-                
-                if total_rows > 0:
-                    # Check which rows need defaults
-                    result = conn.execute(text("""
-                        SELECT COUNT(*) FROM companies 
-                        WHERE company_code IS NULL OR pan_number IS NULL OR company_type IS NULL;
-                    """))
-                    rows_needing_defaults = result.scalar()
+                if missing_columns:
+                    print("   Setting default values for existing rows in companies table...")
                     
-                    if rows_needing_defaults > 0:
-                        # First set company_code and pan_number (non-enum fields)
-                        conn.execute(text("""
-                            UPDATE companies 
-                            SET 
-                                company_code = COALESCE(company_code, 'CMP' || LPAD(id::text, 8, '0')),
-                                pan_number = COALESCE(pan_number, 'NOT_SET')
-                            WHERE company_code IS NULL OR pan_number IS NULL;
+                    # Check if there are any rows at all
+                    result = conn.execute(text("SELECT COUNT(*) FROM companies;"))
+                    total_rows = result.scalar()
+                    
+                    if total_rows > 0:
+                        # Check which rows need defaults
+                        result = conn.execute(text("""
+                            SELECT COUNT(*) FROM companies 
+                            WHERE company_code IS NULL OR pan_number IS NULL OR company_type IS NULL;
                         """))
+                        rows_needing_defaults = result.scalar()
                         
-                        # Then set company_type separately (enum field)
-                        # Only update if company_type column exists and is NULL
-                        try:
+                        if rows_needing_defaults > 0:
+                            # First set company_code and pan_number (non-enum fields)
                             conn.execute(text("""
                                 UPDATE companies 
-                                SET company_type = CAST('Organization' AS companytype)
-                                WHERE company_type IS NULL;
+                                SET 
+                                    company_code = COALESCE(company_code, 'CMP' || LPAD(id::text, 8, '0')),
+                                    pan_number = COALESCE(pan_number, 'NOT_SET')
+                                WHERE company_code IS NULL OR pan_number IS NULL;
                             """))
-                        except Exception as e:
-                            # If enum update fails, skip it - columns are added anyway
-                            print(f"   Warning: Could not set default company_type: {e}")
-                        
-                        print(f"   Updated {rows_needing_defaults} existing row(s)")
-                else:
-                    print("   No existing rows to update")
+                            
+                            # Then set company_type separately (enum field)
+                            # Only update if company_type column exists and is NULL
+                            try:
+                                conn.execute(text("""
+                                    UPDATE companies 
+                                    SET company_type = CAST('Organization' AS companytype)
+                                    WHERE company_type IS NULL;
+                                """))
+                            except Exception as e:
+                                # If enum update fails, skip it - columns are added anyway
+                                print(f"   Warning: Could not set default company_type: {e}")
+                            
+                            print(f"   Updated {rows_needing_defaults} existing row(s)")
+                    else:
+                        print("   No existing rows to update")
+                
+                # Note: Employee new columns don't need default values as they're all nullable
                 
                 # Add NOT NULL constraints if needed (only if no existing rows)
-                print("   Adding constraints...")
-                
-                if total_rows == 0:
-                    # Only set NOT NULL if there are no rows (safe to do)
-                    try:
-                        conn.execute(text("""
-                            ALTER TABLE companies 
-                            ALTER COLUMN company_code SET NOT NULL;
-                        """))
-                    except ProgrammingError:
-                        pass  # Already NOT NULL or has NULL values
+                if missing_columns:
+                    print("   Adding constraints to companies table...")
                     
-                    try:
-                        conn.execute(text("""
-                            ALTER TABLE companies 
-                            ALTER COLUMN company_type SET NOT NULL;
-                        """))
-                    except ProgrammingError:
-                        pass  # Already NOT NULL or has NULL values
+                    result = conn.execute(text("SELECT COUNT(*) FROM companies;"))
+                    total_rows = result.scalar()
                     
-                    try:
-                        conn.execute(text("""
-                            ALTER TABLE companies 
-                            ALTER COLUMN pan_number SET NOT NULL;
-                        """))
-                    except ProgrammingError:
-                        pass  # Already NOT NULL or has NULL values
-                else:
-                    print("   Skipping NOT NULL constraints (existing rows present)")
+                    if total_rows == 0:
+                        # Only set NOT NULL if there are no rows (safe to do)
+                        try:
+                            conn.execute(text("""
+                                ALTER TABLE companies 
+                                ALTER COLUMN company_code SET NOT NULL;
+                            """))
+                        except ProgrammingError:
+                            pass  # Already NOT NULL or has NULL values
+                        
+                        try:
+                            conn.execute(text("""
+                                ALTER TABLE companies 
+                                ALTER COLUMN company_type SET NOT NULL;
+                            """))
+                        except ProgrammingError:
+                            pass  # Already NOT NULL or has NULL values
+                        
+                        try:
+                            conn.execute(text("""
+                                ALTER TABLE companies 
+                                ALTER COLUMN pan_number SET NOT NULL;
+                            """))
+                        except ProgrammingError:
+                            pass  # Already NOT NULL or has NULL values
+                    else:
+                        print("   Skipping NOT NULL constraints (existing rows present)")
                 
                 # Create indexes if they don't exist
-                print("   Creating indexes...")
-                
-                conn.execute(text("""
-                    CREATE UNIQUE INDEX IF NOT EXISTS companies_company_code_key 
-                    ON companies(company_code);
-                """))
-                
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS companies_gst_number_idx 
-                    ON companies(gst_number) WHERE gst_number IS NOT NULL;
-                """))
-                
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS companies_pan_number_idx 
-                    ON companies(pan_number);
-                """))
+                if missing_columns:
+                    print("   Creating indexes for companies table...")
+                    
+                    conn.execute(text("""
+                        CREATE UNIQUE INDEX IF NOT EXISTS companies_company_code_key 
+                        ON companies(company_code);
+                    """))
+                    
+                    conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS companies_gst_number_idx 
+                        ON companies(gst_number) WHERE gst_number IS NOT NULL;
+                    """))
+                    
+                    conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS companies_pan_number_idx 
+                        ON companies(pan_number);
+                    """))
                 
                 # Commit transaction
                 trans.commit()
                 
-                print(f"✅ Successfully added {len(missing_columns)} column(s)!")
-                print("   - company_code")
-                print("   - company_type")
-                print("   - company_type_other")
-                print("   - gst_number")
-                print("   - pan_number")
+                if missing_columns:
+                    print(f"✅ Successfully added {len(missing_columns)} column(s) to companies table!")
+                    for col in missing_columns:
+                        print(f"   - {col}")
+                
+                if employees_missing_columns:
+                    print(f"✅ Successfully added {len(employees_missing_columns)} column(s) to employees table!")
+                    for col in employees_missing_columns:
+                        print(f"   - {col}")
+                
+                if missing_columns or employees_missing_columns:
+                    return True
                 
                 return True
                 

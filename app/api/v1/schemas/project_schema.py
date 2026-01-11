@@ -9,7 +9,7 @@ class ProjectBase(BaseModel):
     client: str = Field(..., min_length=2, max_length=255, description="Client name")
     number_of_days: int = Field(..., gt=0, description="Expected duration in days")
     target_date: date = Field(..., description="Project deadline/target date")
-    project_lead_id: Optional[int] = Field(None, description="ID of the user who is the project lead")
+    project_lead_id: Optional[int] = Field(None, description="ID of the employee who is the project lead")
 
 
 class ProjectCreate(ProjectBase):
@@ -28,9 +28,9 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectLeadInfo(BaseModel):
-    """Schema for project lead information"""
+    """Schema for project lead information (Employee)"""
     id: int
-    username: str
+    employee_code: str
     full_name: str
     email: str
     
@@ -48,17 +48,17 @@ class ProjectResponse(ProjectBase):
     
     @field_validator('project_lead', mode='before')
     @classmethod
-    def convert_user_to_lead_info(cls, v: Any) -> Optional[ProjectLeadInfo]:
-        """Convert User object to ProjectLeadInfo"""
+    def convert_employee_to_lead_info(cls, v: Any) -> Optional[ProjectLeadInfo]:
+        """Convert Employee object to ProjectLeadInfo"""
         if v is None:
             return None
         if isinstance(v, dict):
             return ProjectLeadInfo(**v)
-        # If it's a User SQLAlchemy object, extract the fields
+        # If it's an Employee SQLAlchemy object, extract the fields
         if hasattr(v, 'id'):
             return ProjectLeadInfo(
                 id=v.id,
-                username=v.username,
+                employee_code=v.employee_code,
                 full_name=v.full_name,
                 email=v.email
             )

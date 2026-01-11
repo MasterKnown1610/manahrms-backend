@@ -70,12 +70,18 @@ async def get_my_projects(
     db: Session = Depends(get_database_session)
 ):
     """
-    Get all projects where the current user is the project lead.
+    Get all projects where the current user (as an employee) is the project lead.
     """
+    if not current_user.employee_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User is not associated with an employee. Only employees can be project leads."
+        )
+    
     projects = ProjectService.get_projects_by_lead(
         db=db,
         company_id=current_user.company_id,
-        user_id=current_user.id
+        employee_id=current_user.employee_id
     )
     
     return [ProjectResponse.model_validate(project) for project in projects]

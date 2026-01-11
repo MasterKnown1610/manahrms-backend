@@ -64,6 +64,7 @@ class Employee(Base):
     leave_requests = relationship("LeaveRequest", back_populates="employee", cascade="all, delete-orphan")
     leave_balances = relationship("LeaveBalance", back_populates="employee", cascade="all, delete-orphan")
     attachments = relationship("EmployeeAttachment", back_populates="employee", cascade="all, delete-orphan")
+    led_projects = relationship("Project", foreign_keys="Project.project_lead_id", back_populates="project_lead")
     
     @property
     def full_name(self):

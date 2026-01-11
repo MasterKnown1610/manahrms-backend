@@ -211,7 +211,6 @@ async def upload_employee_attachments(
                 try:
                     download_url = get_s3_download_url(attachment.file_path)
                     view_url = get_s3_view_url(attachment.file_path, mime_type=attachment.mime_type)
-                    logger.debug(f"Generated URLs for new attachment: download={download_url is not None}, view={view_url is not None}")
                     if download_url:
                         attachment_dict["download_url"] = download_url
                     if view_url:
@@ -231,10 +230,6 @@ async def upload_employee_attachments(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Failed to upload any files. Errors: {', '.join(errors)}"
         )
-    
-    if errors:
-        # Some files succeeded, some failed - return partial success with warning
-        logger.warning(f"Partial upload success: {len(uploaded_attachments)} succeeded, {len(errors)} failed")
     
     return EmployeeAttachmentListResponse(
         attachments=uploaded_attachments,
@@ -270,11 +265,10 @@ async def get_employee_attachments(
     for att in attachments:
         att_dict = EmployeeAttachmentResponse.model_validate(att).model_dump(exclude_none=False)
         if settings.USE_S3 and att.file_path.startswith("company_"):
-            try:
-                download_url = get_s3_download_url(att.file_path)
-                view_url = get_s3_view_url(att.file_path, mime_type=att.mime_type)
-                logger.debug(f"Generated URLs for attachment {att.id}: download={download_url is not None}, view={view_url is not None}")
-                if download_url:
+                try:
+                    download_url = get_s3_download_url(att.file_path)
+                    view_url = get_s3_view_url(att.file_path, mime_type=att.mime_type)
+                    if download_url:
                     att_dict["download_url"] = download_url
                 if view_url:
                     att_dict["view_url"] = view_url

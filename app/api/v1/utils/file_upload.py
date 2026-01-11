@@ -154,8 +154,6 @@ def save_uploaded_file(
                 }
             )
             
-            logger.info(f"Saved file {original_filename} to S3: {s3_key} for employee {employee_id}")
-            
             # Return S3 key as file_path
             return s3_key, original_filename, file_size
             
@@ -179,8 +177,6 @@ def save_uploaded_file(
         
         # Return relative path (from upload directory)
         relative_path = str(file_path.relative_to(get_upload_directory()))
-        
-        logger.info(f"Saved file {original_filename} to local storage: {relative_path} for employee {employee_id}")
         
         return relative_path, original_filename, file_size
         
@@ -206,7 +202,6 @@ def delete_file(file_path: str) -> None:
             # Check if it looks like an S3 key (contains company_/employee_ pattern)
             if file_path.startswith("company_") or "/" in file_path:
                 if s3_service.delete_file(file_path):
-                    logger.info(f"Deleted file from S3: {file_path}")
                     return
         except Exception as e:
             logger.error(f"Error deleting file from S3: {str(e)}")
@@ -219,15 +214,12 @@ def delete_file(file_path: str) -> None:
         
         if full_path.exists():
             full_path.unlink()
-            logger.info(f"Deleted file from local storage: {file_path}")
             
             # Try to remove empty parent directories
             parent = full_path.parent
             while parent != upload_dir and not any(parent.iterdir()):
                 parent.rmdir()
                 parent = parent.parent
-        else:
-            logger.warning(f"File not found for deletion: {file_path}")
             
     except Exception as e:
         logger.error(f"Error deleting file {file_path}: {str(e)}")

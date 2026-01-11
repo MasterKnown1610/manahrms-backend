@@ -17,7 +17,6 @@ try:
     BOTO3_AVAILABLE = True
 except ImportError:
     BOTO3_AVAILABLE = False
-    logger.warning("boto3 is not installed. S3 functionality will not be available. Install it with: pip install boto3")
 
 
 class S3Service:
@@ -46,7 +45,7 @@ class S3Service:
         else:
             # If credentials not provided, boto3 will use default credential chain
             # (environment variables, IAM role, etc.)
-            logger.info("AWS credentials not provided, using default credential chain")
+            pass
         
         # Add custom endpoint if provided (for S3-compatible services)
         if settings.S3_ENDPOINT_URL:
@@ -64,15 +63,12 @@ class S3Service:
         # Verify credentials by checking if we can access the bucket
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
-            logger.info(f"Successfully connected to S3 bucket: {self.bucket_name}")
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
             if error_code == '403':
                 logger.error(f"Access denied to S3 bucket {self.bucket_name}. Check your AWS credentials and permissions.")
             elif error_code == '404':
                 logger.error(f"S3 bucket {self.bucket_name} not found. Check bucket name and region.")
-            else:
-                logger.warning(f"Could not verify S3 bucket access: {e}")
     
     def upload_file(
         self,
@@ -111,7 +107,6 @@ class S3Service:
                 ExtraArgs=extra_args
             )
             
-            logger.info(f"Successfully uploaded file to S3: {s3_key}")
             return s3_key
             
         except ClientError as e:
@@ -150,7 +145,6 @@ class S3Service:
         except ClientError as e:
             error_code = e.response.get('Error', {}).get('Code', '')
             if error_code == 'NoSuchKey':
-                logger.warning(f"File not found in S3: {s3_key}")
                 return None
             logger.error(f"Error downloading file from S3: {str(e)}")
             raise HTTPException(
@@ -179,7 +173,6 @@ class S3Service:
                 Bucket=self.bucket_name,
                 Key=s3_key
             )
-            logger.info(f"Successfully deleted file from S3: {s3_key}")
             return True
             
         except ClientError as e:
@@ -303,7 +296,6 @@ def get_s3_service() -> Optional[S3Service]:
         S3Service instance if enabled, None otherwise
     """
     if not BOTO3_AVAILABLE:
-        logger.warning("boto3 is not installed. S3 functionality is not available.")
         return None
     
     if settings.USE_S3:

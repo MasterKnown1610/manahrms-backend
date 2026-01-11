@@ -256,7 +256,6 @@ class EmployeeService:
                 Task.assigned_to_employee_id == employee_id,
                 Task.company_id == company_id
             ).delete(synchronize_session=False)
-            logger.info(f"Deleted {tasks_deleted} task(s) assigned to employee {employee_id}")
             
             # Delete employee attachments (files and records)
             attachments = db.query(EmployeeAttachment).filter(
@@ -269,19 +268,16 @@ class EmployeeService:
                 EmployeeAttachment.employee_id == employee_id,
                 EmployeeAttachment.company_id == company_id
             ).delete(synchronize_session=False)
-            logger.info(f"Deleted {attachments_deleted} attachment(s) for employee {employee_id}")
             
             # Delete associated user account if it exists
             if employee.user:
                 user_id = employee.user.id
                 db.delete(employee.user)
-                logger.info(f"Deleted user account {user_id} associated with employee {employee_id}")
             
             # Delete vector store entries for this employee
             try:
                 sync_service = VectorSyncService()
                 sync_service.delete_content(db, company_id, "employee", employee_id)
-                logger.info(f"Deleted vector store entries for employee {employee_id}")
             except Exception as e:
                 logger.error(f"Failed to delete vector store entries for employee {employee_id}: {str(e)}")
                 # Continue with employee deletion even if vector sync fails
@@ -293,8 +289,6 @@ class EmployeeService:
             # - LeaveBalance records (ondelete="CASCADE")
             db.delete(employee)
             db.commit()
-            
-            logger.info(f"Permanently deleted employee {employee_id} and all related records")
             
         except Exception as e:
             db.rollback()
@@ -414,8 +408,6 @@ class EmployeeService:
         db.commit()
         db.refresh(attachment)
         
-        logger.info(f"Uploaded attachment {attachment.id} ({attachment_type.value}) for employee {employee_id}")
-        
         return attachment
     
     @staticmethod
@@ -516,8 +508,6 @@ class EmployeeService:
             # Delete database record
             db.delete(attachment)
             db.commit()
-            
-            logger.info(f"Deleted attachment {attachment_id} for employee {employee_id}")
             
         except Exception as e:
             db.rollback()

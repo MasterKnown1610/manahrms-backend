@@ -18,7 +18,7 @@ class Project(Base):
     client = Column(String(255), nullable=False)
     number_of_days = Column(Integer, nullable=False)  # Expected duration in days
     target_date = Column(Date, nullable=False, index=True)  # Project deadline
-    project_lead_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    project_lead_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
     
     # Status and metadata
     is_active = Column(Boolean, default=True)
@@ -27,7 +27,7 @@ class Project(Base):
     
     # Relationships
     company = relationship("Company", back_populates="projects")
-    project_lead = relationship("User", foreign_keys=[project_lead_id], back_populates="led_projects")
+    project_lead = relationship("Employee", foreign_keys=[project_lead_id], back_populates="led_projects")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
     
     def __repr__(self):

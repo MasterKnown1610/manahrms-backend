@@ -27,16 +27,7 @@ def initialize_database_on_startup():
             'leave_balances',  # Leave management
             'chat_rooms',  # Chat functionality
             'chat_room_members',  # Chat room members
-            'chat_messages',  # Chat messages
-            # Workflow system tables
-            'workflows',
-            'workflow_nodes',
-            'workflow_edges',
-            'project_workflows',
-            'project_workflow_users',
-            'task_state_history',
-            'sla_definitions',
-            'task_sla_tracking'
+            'chat_messages'  # Chat messages
         ]
         
         # Check for missing tables
@@ -89,22 +80,22 @@ def initialize_database_on_startup():
                     print("✅ Missing tables created successfully!")
                     trans.commit()
                     
-                    # After creating tables, check if tasks table needs workflow columns
+                    # After creating tables, check if tasks table needs project_id column
                     # Refresh inspector to get updated table list
                     inspector = inspect(engine)
                     current_tables = inspector.get_table_names()
-                    if 'tasks' in current_tables:
+                    if 'tasks' in current_tables and 'projects' in current_tables:
                         tasks_columns = [col['name'] for col in inspector.get_columns('tasks')]
-                        with engine.connect() as conn2:
-                            trans2 = conn2.begin()
-                            try:
-                                # Add project_id if missing
-                                if 'project_id' not in tasks_columns and 'projects' in current_tables:
-                                    print("📝 Adding project_id column to tasks table...")
+                        if 'project_id' not in tasks_columns:
+                            print("📝 Adding project_id column to tasks table...")
+                            with engine.connect() as conn2:
+                                trans2 = conn2.begin()
+                                try:
                                     conn2.execute(text("""
                                         ALTER TABLE tasks 
                                         ADD COLUMN IF NOT EXISTS project_id INTEGER;
                                     """))
+                                    # Add foreign key constraint
                                     try:
                                         conn2.execute(text("""
                                             ALTER TABLE tasks 
@@ -113,61 +104,17 @@ def initialize_database_on_startup():
                                             REFERENCES projects(id) ON DELETE SET NULL;
                                         """))
                                     except ProgrammingError:
-                                        pass
+                                        pass  # Constraint might already exist
+                                    # Create index
                                     conn2.execute(text("""
                                         CREATE INDEX IF NOT EXISTS tasks_project_id_idx 
                                         ON tasks(project_id) WHERE project_id IS NOT NULL;
                                     """))
+                                    trans2.commit()
                                     print("✅ Added project_id column to tasks table!")
-                                
-                                # Add project_workflow_id if missing
-                                if 'project_workflow_id' not in tasks_columns and 'project_workflows' in current_tables:
-                                    print("📝 Adding project_workflow_id column to tasks table...")
-                                    conn2.execute(text("""
-                                        ALTER TABLE tasks 
-                                        ADD COLUMN IF NOT EXISTS project_workflow_id UUID;
-                                    """))
-                                    try:
-                                        conn2.execute(text("""
-                                            ALTER TABLE tasks 
-                                            ADD CONSTRAINT tasks_project_workflow_id_fkey 
-                                            FOREIGN KEY (project_workflow_id) 
-                                            REFERENCES project_workflows(id) ON DELETE SET NULL;
-                                        """))
-                                    except ProgrammingError:
-                                        pass
-                                    conn2.execute(text("""
-                                        CREATE INDEX IF NOT EXISTS tasks_project_workflow_id_idx 
-                                        ON tasks(project_workflow_id) WHERE project_workflow_id IS NOT NULL;
-                                    """))
-                                    print("✅ Added project_workflow_id column to tasks table!")
-                                
-                                # Add current_node_id if missing
-                                if 'current_node_id' not in tasks_columns and 'workflow_nodes' in current_tables:
-                                    print("📝 Adding current_node_id column to tasks table...")
-                                    conn2.execute(text("""
-                                        ALTER TABLE tasks 
-                                        ADD COLUMN IF NOT EXISTS current_node_id UUID;
-                                    """))
-                                    try:
-                                        conn2.execute(text("""
-                                            ALTER TABLE tasks 
-                                            ADD CONSTRAINT tasks_current_node_id_fkey 
-                                            FOREIGN KEY (current_node_id) 
-                                            REFERENCES workflow_nodes(id) ON DELETE SET NULL;
-                                        """))
-                                    except ProgrammingError:
-                                        pass
-                                    conn2.execute(text("""
-                                        CREATE INDEX IF NOT EXISTS tasks_current_node_id_idx 
-                                        ON tasks(current_node_id) WHERE current_node_id IS NOT NULL;
-                                    """))
-                                    print("✅ Added current_node_id column to tasks table!")
-                                
-                                trans2.commit()
-                            except Exception as e:
-                                trans2.rollback()
-                                print(f"   Warning: Could not add workflow columns to tasks table: {e}")
+                                except Exception as e:
+                                    trans2.rollback()
+                                    print(f"   Warning: Could not add project_id column: {e}")
                     
                     return True
                 
@@ -188,7 +135,7 @@ def initialize_database_on_startup():
                     if col_name not in companies_columns:
                         missing_columns.append(col_name)
                 
-                # Check for missing columns in tasks table (if tasks table exists)
+                # Check for project_id column in tasks table (if tasks table exists)
                 # This should be checked regardless of companies table status
                 current_tables = inspector.get_table_names()
                 
@@ -211,8 +158,6 @@ def initialize_database_on_startup():
                 tasks_updated = False
                 if 'tasks' in current_tables:
                     tasks_columns = [col['name'] for col in inspector.get_columns('tasks')]
-                    
-                    # Add project_id if missing
                     if 'project_id' not in tasks_columns:
                         print("📝 Adding project_id column to tasks table...")
                         # First ensure projects table exists (it should, but check)
@@ -247,76 +192,6 @@ def initialize_database_on_startup():
                                 ON tasks(project_id) WHERE project_id IS NOT NULL;
                             """))
                             print("✅ Added project_id column to tasks table!")
-                            tasks_updated = True
-                    
-                    # Add project_workflow_id if missing (for workflow system)
-                    if 'project_workflow_id' not in tasks_columns:
-                        print("📝 Adding project_workflow_id column to tasks table...")
-                        if 'project_workflows' in current_tables:
-                            conn.execute(text("""
-                                ALTER TABLE tasks 
-                                ADD COLUMN IF NOT EXISTS project_workflow_id UUID;
-                            """))
-                            # Add foreign key constraint
-                            try:
-                                conn.execute(text("""
-                                    ALTER TABLE tasks 
-                                    ADD CONSTRAINT tasks_project_workflow_id_fkey 
-                                    FOREIGN KEY (project_workflow_id) 
-                                    REFERENCES project_workflows(id) ON DELETE SET NULL;
-                                """))
-                            except ProgrammingError:
-                                try:
-                                    conn.execute(text("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_project_workflow_id_fkey;"))
-                                    conn.execute(text("""
-                                        ALTER TABLE tasks 
-                                        ADD CONSTRAINT tasks_project_workflow_id_fkey 
-                                        FOREIGN KEY (project_workflow_id) 
-                                        REFERENCES project_workflows(id) ON DELETE SET NULL;
-                                    """))
-                                except ProgrammingError:
-                                    pass
-                            # Create index
-                            conn.execute(text("""
-                                CREATE INDEX IF NOT EXISTS tasks_project_workflow_id_idx 
-                                ON tasks(project_workflow_id) WHERE project_workflow_id IS NOT NULL;
-                            """))
-                            print("✅ Added project_workflow_id column to tasks table!")
-                            tasks_updated = True
-                    
-                    # Add current_node_id if missing (for workflow system)
-                    if 'current_node_id' not in tasks_columns:
-                        print("📝 Adding current_node_id column to tasks table...")
-                        if 'workflow_nodes' in current_tables:
-                            conn.execute(text("""
-                                ALTER TABLE tasks 
-                                ADD COLUMN IF NOT EXISTS current_node_id UUID;
-                            """))
-                            # Add foreign key constraint
-                            try:
-                                conn.execute(text("""
-                                    ALTER TABLE tasks 
-                                    ADD CONSTRAINT tasks_current_node_id_fkey 
-                                    FOREIGN KEY (current_node_id) 
-                                    REFERENCES workflow_nodes(id) ON DELETE SET NULL;
-                                """))
-                            except ProgrammingError:
-                                try:
-                                    conn.execute(text("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_current_node_id_fkey;"))
-                                    conn.execute(text("""
-                                        ALTER TABLE tasks 
-                                        ADD CONSTRAINT tasks_current_node_id_fkey 
-                                        FOREIGN KEY (current_node_id) 
-                                        REFERENCES workflow_nodes(id) ON DELETE SET NULL;
-                                    """))
-                                except ProgrammingError:
-                                    pass
-                            # Create index
-                            conn.execute(text("""
-                                CREATE INDEX IF NOT EXISTS tasks_current_node_id_idx 
-                                ON tasks(current_node_id) WHERE current_node_id IS NOT NULL;
-                            """))
-                            print("✅ Added current_node_id column to tasks table!")
                             tasks_updated = True
                 
                 if not missing_columns and not employees_missing_columns:

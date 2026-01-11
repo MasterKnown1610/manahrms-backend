@@ -29,7 +29,6 @@ class Project(Base):
     company = relationship("Company", back_populates="projects")
     project_lead = relationship("User", foreign_keys=[project_lead_id], back_populates="led_projects")
     tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
-    project_workflows = relationship("ProjectWorkflow", back_populates="project", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Project {self.name} - {self.client}>"

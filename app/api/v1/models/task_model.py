@@ -1,5 +1,4 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum, ForeignKey, Date
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, date
 import enum
@@ -36,10 +35,6 @@ class Task(Base):
     assigned_to_employee_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True, index=True)
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
-    
-    # Workflow fields
-    project_workflow_id = Column(UUID(as_uuid=True), ForeignKey("project_workflows.id", ondelete="SET NULL"), nullable=True, index=True)
-    current_node_id = Column(UUID(as_uuid=True), ForeignKey("workflow_nodes.id", ondelete="SET NULL"), nullable=True, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -49,10 +44,6 @@ class Task(Base):
     assigned_to_employee = relationship("Employee")
     created_by_user = relationship("User")
     project = relationship("Project", back_populates="tasks")
-    project_workflow = relationship("ProjectWorkflow", back_populates="tasks")
-    current_node = relationship("WorkflowNode", foreign_keys=[current_node_id])
-    state_history = relationship("TaskStateHistory", back_populates="task", cascade="all, delete-orphan", order_by="TaskStateHistory.created_at")
-    sla_tracking = relationship("TaskSLATracking", back_populates="task", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Task {self.id} {self.title} ({self.status})>"

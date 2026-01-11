@@ -265,10 +265,10 @@ async def get_employee_attachments(
     for att in attachments:
         att_dict = EmployeeAttachmentResponse.model_validate(att).model_dump(exclude_none=False)
         if settings.USE_S3 and att.file_path.startswith("company_"):
-                try:
-                    download_url = get_s3_download_url(att.file_path)
-                    view_url = get_s3_view_url(att.file_path, mime_type=att.mime_type)
-                    if download_url:
+            try:
+                download_url = get_s3_download_url(att.file_path)
+                view_url = get_s3_view_url(att.file_path, mime_type=att.mime_type)
+                if download_url:
                     att_dict["download_url"] = download_url
                 if view_url:
                     att_dict["view_url"] = view_url

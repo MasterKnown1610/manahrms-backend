@@ -1,11 +1,12 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 from fastapi import HTTPException, status
 
 from app.api.v1.models.department_model import Department
 from app.api.v1.models.department_access_model import DepartmentAccess
 from app.api.v1.models.user_model import User, UserRole
+from app.api.v1.models.employee_model import Employee
 
 
 class DepartmentService:
@@ -294,4 +295,50 @@ class DepartmentService:
         ).all()
         
         return departments
+
+    @staticmethod
+    def delete_department(
+        db: Session,
+        department_id: int,
+        company_id: int
+    ) -> None:
+        """
+        Delete a department if it has no employees assigned.
+        If employees are assigned, raises an HTTPException with a warning message.
+        """
+        # Verify department exists and belongs to company
+        department = db.query(Department).filter(
+            Department.id == department_id,
+            Department.company_id == company_id
+        ).first()
+        
+        if not department:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Department not found"
+            )
+        
+        # Check if there are any employees assigned to this department
+        # Count both active and inactive employees (we don't want to delete if any employees exist)
+        employee_count = db.query(func.count(Employee.id)).filter(
+            Employee.department_id == department_id,
+            Employee.company_id == company_id,
+            Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
+        ).scalar() or 0
+        
+        if employee_count > 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot delete department '{department.name}'. There are {employee_count} employee(s) assigned to this department. Please reassign or remove employees before deleting the department."
+            )
+        
+        # No employees assigned, safe to delete
+        # Delete related department access records first (cascade should handle this, but being explicit)
+        db.query(DepartmentAccess).filter(
+            DepartmentAccess.department_id == department_id
+        ).delete()
+        
+        # Delete the department
+        db.delete(department)
+        db.commit()
 

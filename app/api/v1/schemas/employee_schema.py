@@ -2,6 +2,7 @@ from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date
 from typing import Optional
 from decimal import Decimal
+from app.api.v1.models.employee_model import Gender
 
 
 class EmployeeBase(BaseModel):
@@ -11,9 +12,14 @@ class EmployeeBase(BaseModel):
     email: EmailStr
     phone: Optional[str] = Field(None, max_length=20)
     date_of_birth: Optional[date] = None
+    gender: Optional[Gender] = None
     position: Optional[str] = Field(None, max_length=255)
     department_id: Optional[int] = None
     salary: Optional[Decimal] = None
+    address: Optional[str] = Field(None, description="Employee address")
+    city: Optional[str] = Field(None, max_length=100, description="City")
+    pin_code: Optional[str] = Field(None, max_length=10, description="PIN/ZIP code")
+    notes: Optional[str] = Field(None, description="Additional notes about the employee")
 
 
 class EmployeeCreate(EmployeeBase):
@@ -30,9 +36,14 @@ class EmployeeUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=20)
     date_of_birth: Optional[date] = None
+    gender: Optional[Gender] = None
     position: Optional[str] = Field(None, max_length=255)
     department_id: Optional[int] = None
     salary: Optional[Decimal] = None
+    address: Optional[str] = Field(None, description="Employee address")
+    city: Optional[str] = Field(None, max_length=100, description="City")
+    pin_code: Optional[str] = Field(None, max_length=10, description="PIN/ZIP code")
+    notes: Optional[str] = Field(None, description="Additional notes about the employee")
     is_active: Optional[bool] = None
 
 

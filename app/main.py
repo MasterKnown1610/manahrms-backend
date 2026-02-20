@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+import logging
 
 from app.db.session import get_database_session, engine
 from app.core.config import settings
@@ -13,6 +14,8 @@ from app.api.v1.utils.error_handler import (
     validation_exception_handler,
     general_exception_handler
 )
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -36,21 +39,14 @@ app.add_exception_handler(Exception, general_exception_handler)
 
 @app.on_event("startup")
 async def initialize_application_on_startup():
-    print(f"Starting {settings.PROJECT_NAME}...")
-    print(f"Database: {settings.DATABASE_NAME}")
-    
     try:
         with engine.connect() as conn:
-            print("Database connected successfully!")
+            pass
         
-        if initialize_database_on_startup():
-            print("Database initialization complete!")
-        else:
-            print("Database initialization had issues, but continuing...")
+        initialize_database_on_startup()
         
     except Exception as e:
-        print(f"Database connection failed: {e}")
-        print("Server will continue, but database operations may fail.")
+        pass
 
 
 @app.get("/")

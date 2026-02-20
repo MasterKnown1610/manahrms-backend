@@ -41,7 +41,6 @@ class User(Base):
     company = relationship("Company", back_populates="users")
     employee = relationship("Employee", back_populates="user", foreign_keys=[employee_id])
     department_access = relationship("DepartmentAccess", foreign_keys="DepartmentAccess.user_id", back_populates="user", cascade="all, delete-orphan")
-    led_projects = relationship("Project", foreign_keys="Project.project_lead_id", back_populates="project_lead")
     
     def __repr__(self):
         return f"<User {self.username} ({self.role})>"

@@ -6,7 +6,7 @@ from datetime import date
 import logging
 
 from app.api.v1.models.project_model import Project
-from app.api.v1.models.user_model import User
+from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.task_model import Task, TaskStatus
 from app.api.v1.schemas.project_schema import ProjectCreate, ProjectUpdate
 from app.api.v1.services.vector_sync_service import VectorSyncService
@@ -31,15 +31,16 @@ class ProjectService:
         """
         # Validate project lead belongs to company (if provided)
         if data.project_lead_id:
-            project_lead = db.query(User).filter(
-                User.id == data.project_lead_id,
-                User.company_id == company_id,
-                User.is_active == True
+            project_lead = db.query(Employee).filter(
+                Employee.id == data.project_lead_id,
+                Employee.company_id == company_id,
+                Employee.is_active == True,
+                Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
             ).first()
             if not project_lead:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Project lead not found in company"
+                    detail="Project lead (employee) not found in company"
                 )
 
         # Check if project name already exists in company
@@ -73,8 +74,8 @@ class ProjectService:
             sync_service = VectorSyncService()
             sync_service.sync_project(db, project.id)
         except Exception as e:
-            logger.error(f"Failed to sync project {project.id} to vector store: {str(e)}")
             # Don't fail the main operation if vector sync fails
+            pass
         
         return project
 
@@ -147,15 +148,16 @@ class ProjectService:
         
         # Validate project lead if being updated
         if data.project_lead_id is not None:
-            project_lead = db.query(User).filter(
-                User.id == data.project_lead_id,
-                User.company_id == company_id,
-                User.is_active == True
+            project_lead = db.query(Employee).filter(
+                Employee.id == data.project_lead_id,
+                Employee.company_id == company_id,
+                Employee.is_active == True,
+                Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
             ).first()
             if not project_lead:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Project lead not found in company"
+                    detail="Project lead (employee) not found in company"
                 )
         
         # Check name uniqueness if name is being updated
@@ -186,8 +188,8 @@ class ProjectService:
             sync_service = VectorSyncService()
             sync_service.sync_project(db, project.id)
         except Exception as e:
-            logger.error(f"Failed to sync project {project.id} to vector store after update: {str(e)}")
             # Don't fail the main operation if vector sync fails
+            pass
         
         return project
 
@@ -211,8 +213,8 @@ class ProjectService:
             sync_service = VectorSyncService()
             sync_service.sync_project(db, project.id)
         except Exception as e:
-            logger.error(f"Failed to sync project {project.id} to vector store after deactivation: {str(e)}")
             # Don't fail the main operation if vector sync fails
+            pass
         
         return project
 
@@ -245,14 +247,14 @@ class ProjectService:
     def get_projects_by_lead(
         db: Session,
         company_id: int,
-        user_id: int
+        employee_id: int
     ) -> List[Project]:
         """
-        Get all projects where a specific user is the project lead.
+        Get all projects where a specific employee is the project lead.
         """
         return db.query(Project).filter(
             Project.company_id == company_id,
-            Project.project_lead_id == user_id,
+            Project.project_lead_id == employee_id,
             Project.is_active == True
         ).all()
     

@@ -77,6 +77,28 @@ class AttendanceService:
             db.add(attendance)
             db.commit()
             db.refresh(attendance)
+            
+            # Emit WebSocket event for attendance marked
+            try:
+                from app.api.v1.services.websocket_service import websocket_service
+                from app.api.v1.utils.websocket_helper import emit_websocket_event_async
+                # Employee is already imported at module level, query it
+                employee = db.query(Employee).filter(Employee.id == employee_id).first()
+                if employee:
+                    emit_websocket_event_async(
+                        websocket_service.emit_attendance_marked(
+                            db=db,
+                            tenant_id=company_id,
+                            employee_id=employee_id,
+                            employee_name=employee.full_name,
+                            action="LOGIN"
+                        )
+                    )
+            except Exception as e:
+                # Don't fail attendance if WebSocket fails
+                import logging
+                logging.getLogger(__name__).error(f"Failed to emit attendance WebSocket event: {e}")
+            
             return attendance
 
     @staticmethod
@@ -144,6 +166,27 @@ class AttendanceService:
         
         db.commit()
         db.refresh(attendance)
+        
+        # Emit WebSocket event for attendance marked (logout)
+        try:
+            from app.api.v1.services.websocket_service import websocket_service
+            from app.api.v1.utils.websocket_helper import emit_websocket_event_async
+            # Employee is already imported at module level, use the existing employee variable
+            if employee:
+                emit_websocket_event_async(
+                    websocket_service.emit_attendance_marked(
+                        db=db,
+                        tenant_id=company_id,
+                        employee_id=employee_id,
+                        employee_name=employee.full_name,
+                        action="LOGOUT"
+                    )
+                )
+        except Exception as e:
+            # Don't fail attendance if WebSocket fails
+            import logging
+            logging.getLogger(__name__).error(f"Failed to emit attendance WebSocket event: {e}")
+        
         return attendance
 
     @staticmethod
@@ -282,4 +325,48 @@ class AttendanceService:
         ).offset((page - 1) * limit).limit(limit).all()
         
         return items, total
+
+    @staticmethod
+    def get_employees_present_on_date(
+        db: Session,
+        company_id: int,
+        target_date: date,
+    ) -> List[dict]:
+        """
+        Get list of employees who were present (punched in) on a specific date.
+        Returns employee information along with their attendance details.
+        """
+        # Query attendance records for the date, joining with Employee table
+        attendances = db.query(Attendance).join(
+            Employee,
+            Attendance.employee_id == Employee.id
+        ).filter(
+            Attendance.company_id == company_id,
+            Attendance.attendance_date == target_date,
+            Attendance.is_present == True,
+            Employee.is_active == True,
+            Employee.deleted_at.is_(None)  # Exclude soft-deleted employees
+        ).all()
+        
+        # Build response with employee and attendance information
+        result = []
+        for attendance in attendances:
+            employee = attendance.employee
+            if employee:
+                result.append({
+                    "employee_id": employee.id,
+                    "employee_code": employee.employee_code,
+                    "first_name": employee.first_name,
+                    "last_name": employee.last_name,
+                    "full_name": employee.full_name,
+                    "email": employee.email,
+                    "position": employee.position,
+                    "department_id": employee.department_id,
+                    "punch_in_time": attendance.punch_in_time,
+                    "punch_out_time": attendance.punch_out_time,
+                    "work_duration_minutes": attendance.work_duration_hours,  # Note: stored as minutes
+                    "is_checked_out": attendance.is_checked_out
+                })
+        
+        return result
 

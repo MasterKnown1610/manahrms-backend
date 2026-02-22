@@ -5,8 +5,12 @@ from fastapi import HTTPException, status, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from typing import Optional, Any
+import logging
+import traceback
 
 from app.api.v1.schemas.common import ErrorResponse
+
+logger = logging.getLogger(__name__)
 
 
 def create_error_response(
@@ -80,6 +84,13 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     """
     Custom handler for HTTPException to return standardized error format.
     """
+    # Log the HTTP exception
+    logger.warning(
+        f"HTTPException: {exc.status_code} - {exc.detail} - "
+        f"Path: {request.url.path} - Method: {request.method} - "
+        f"IP: {request.client.host if request.client else 'unknown'}"
+    )
+    
     # Check if detail is already in our format
     if isinstance(exc.detail, dict) and "message" in exc.detail:
         error_detail = exc.detail
@@ -113,6 +124,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         error_messages.append(f"{field}: {message}")
         error_details[field] = message
     
+    logger.warning(
+        f"Validation error - Path: {request.url.path} - Method: {request.method} - "
+        f"Errors: {error_details} - IP: {request.client.host if request.client else 'unknown'}"
+    )
+    
     error_response = ErrorResponse(
         success=False,
         message="Validation error: " + "; ".join(error_messages),
@@ -130,6 +146,17 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
     """
     Custom handler for unhandled exceptions to return standardized error format.
     """
+    # Log the full exception with traceback
+    logger.error(
+        f"Unhandled exception: {type(exc).__name__}: {str(exc)} - "
+        f"Path: {request.url.path} - Method: {request.method} - "
+        f"IP: {request.client.host if request.client else 'unknown'}",
+        exc_info=True
+    )
+    
+    # Log full traceback for debugging
+    logger.debug(f"Full traceback:\n{traceback.format_exc()}")
+    
     error_response = ErrorResponse(
         success=False,
         message="An unexpected error occurred. Please try again later.",

@@ -102,3 +102,25 @@ class PunchOutResponse(BaseModel):
     attendance: AttendanceResponse
     work_duration_minutes: Optional[int] = None
 
+
+class EmployeePresentInfo(BaseModel):
+    """Schema for employee present information"""
+    employee_id: int
+    employee_code: str
+    first_name: str
+    last_name: str
+    full_name: str
+    email: str
+    position: Optional[str] = None
+    department_id: Optional[int] = None
+    punch_in_time: Optional[datetime] = None
+    punch_out_time: Optional[datetime] = None
+    work_duration_minutes: Optional[int] = None
+    is_checked_out: bool
+
+
+class EmployeesPresentResponse(BaseModel):
+    """Schema for list of employees present on a date"""
+    date: date
+    total_present: int
+    members: List[EmployeePresentInfo]

@@ -20,7 +20,9 @@ from app.api.v1.schemas.attendance_schema import (
     AttendanceStatsResponse,
     AttendanceListResponse,
     PunchInResponse,
-    PunchOutResponse
+    PunchOutResponse,
+    EmployeesPresentResponse,
+    EmployeePresentInfo
 )
 from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
 from app.api.v1.utils.pagination import paginate_query, create_paginated_response
@@ -192,6 +194,33 @@ async def get_attendance_calendar(
     )
 
 
+@router.get("/present", response_model=EmployeesPresentResponse)
+async def get_employees_present_on_date(
+    date: date = Query(..., description="Date to get list of present employees (format: YYYY-MM-DD)"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_database_session)
+):
+    """
+    Get list of employees who were present (punched in) on a specific date.
+    Admin only endpoint.
+    Returns employee information along with their attendance details for that date.
+    """
+    employees_data = AttendanceService.get_employees_present_on_date(
+        db=db,
+        company_id=current_user.company_id,
+        target_date=date
+    )
+    
+    # Convert dict list to EmployeePresentInfo objects
+    members = [EmployeePresentInfo(**emp_data) for emp_data in employees_data]
+    
+    return EmployeesPresentResponse(
+        date=date,
+        total_present=len(members),
+        members=members
+    )
+
+
 @router.get("/stats", response_model=AttendanceStatsResponse)
 async def get_attendance_stats(
     target_date: Optional[date] = Query(None, description="Date to get stats for (default: today)"),
@@ -329,5 +358,32 @@ async def get_employee_attendance_calendar(
         days=days,
         total_present_days=present_days,
         total_work_hours=round(total_hours, 2)
+    )
+
+
+@router.get("/present", response_model=EmployeesPresentResponse)
+async def get_employees_present_on_date(
+    date: date = Query(..., description="Date to get list of present employees (format: YYYY-MM-DD)"),
+    current_user: User = Depends(require_admin_role),
+    db: Session = Depends(get_database_session)
+):
+    """
+    Get list of employees who were present (punched in) on a specific date.
+    Admin only endpoint.
+    Returns employee information along with their attendance details for that date.
+    """
+    employees_data = AttendanceService.get_employees_present_on_date(
+        db=db,
+        company_id=current_user.company_id,
+        target_date=date
+    )
+    
+    # Convert dict list to EmployeePresentInfo objects
+    members = [EmployeePresentInfo(**emp_data) for emp_data in employees_data]
+    
+    return EmployeesPresentResponse(
+        date=date,
+        total_present=len(members),
+        members=members
     )
 

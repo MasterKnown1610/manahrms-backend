@@ -57,7 +57,7 @@ database_url = get_database_url_with_ssl()
 engine = create_engine(
     database_url,
     pool_pre_ping=True,
-    echo=True,
+    echo=False,
 )
 
 SessionLocal = sessionmaker(

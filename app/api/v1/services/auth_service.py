@@ -1,7 +1,8 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from fastapi import status
 from datetime import timedelta
+import logging
 
 from app.api.v1.models.user_model import User, UserRole
 from app.api.v1.models.company_model import Company, CompanyType
@@ -10,6 +11,8 @@ from app.api.v1.schemas.company_schema import CompanyRegister
 from app.core.security import hash_password_for_storage, verify_password_against_hash, create_jwt_access_token
 from app.core.config import settings
 from app.api.v1.utils.error_handler import raise_http_exception
+
+logger = logging.getLogger(__name__)
 
 
 def generate_unique_company_code(db: Session) -> str:
@@ -143,53 +146,86 @@ class AuthService:
     
     @staticmethod
     def authenticate_user_and_generate_token(db: Session, login_data: UserLogin) -> tuple[User, str]:
-        user = db.query(User).filter(
-            or_(
-                User.username == login_data.username,
-                User.email == login_data.username
+        logger.info(f"Login attempt for username/email: {login_data.username}")
+        
+        try:
+            # Load user with company relationship to avoid lazy loading issues
+            user = db.query(User).options(joinedload(User.company)).filter(
+                or_(
+                    User.username == login_data.username,
+                    User.email == login_data.username
+                )
+            ).first()
+            
+            logger.debug(f"User query completed. User found: {user is not None}")
+            
+            if not user:
+                logger.warning(f"Login failed: User not found for username/email: {login_data.username}")
+                raise_http_exception(
+                    message="Incorrect username or password",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    error_code="INVALID_CREDENTIALS"
+                )
+            
+            logger.debug(f"User found: id={user.id}, username={user.username}, email={user.email}, is_active={user.is_active}")
+            
+            if not verify_password_against_hash(login_data.password, user.hashed_password):
+                logger.warning(f"Login failed: Invalid password for user: {user.username}")
+                raise_http_exception(
+                    message="Incorrect username or password",
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    error_code="INVALID_CREDENTIALS"
+                )
+            
+            logger.debug("Password verification successful")
+            
+            if not user.is_active:
+                logger.warning(f"Login failed: Inactive user account: {user.username}")
+                raise_http_exception(
+                    message="Inactive user account",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    error_code="USER_INACTIVE"
+                )
+            
+            # Check if company relationship is loaded
+            if not hasattr(user, 'company') or user.company is None:
+                logger.error(f"Login failed: Company relationship not loaded for user: {user.username}, company_id: {user.company_id}")
+                raise_http_exception(
+                    message="Company information not found",
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    error_code="COMPANY_NOT_FOUND"
+                )
+            
+            logger.debug(f"Company loaded: id={user.company.id}, name={user.company.company_name}, is_active={user.company.is_active}")
+            
+            if not user.company.is_active:
+                logger.warning(f"Login failed: Inactive company account: {user.company.company_name} (id: {user.company.id})")
+                raise_http_exception(
+                    message="Company account is inactive",
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    error_code="COMPANY_INACTIVE"
+                )
+            
+            logger.debug(f"Generating JWT token for user: {user.username}, company_id: {user.company_id}, role: {user.role.value}")
+            
+            access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token = create_jwt_access_token(
+                data={
+                    "sub": user.username, 
+                    "user_id": user.id,
+                    "company_id": user.company_id,
+                    "role": user.role.value
+                },
+                expires_delta=access_token_expires
             )
-        ).first()
-        
-        if not user:
-            raise_http_exception(
-                message="Incorrect username or password",
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                error_code="INVALID_CREDENTIALS"
-            )
-        
-        if not verify_password_against_hash(login_data.password, user.hashed_password):
-            raise_http_exception(
-                message="Incorrect username or password",
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                error_code="INVALID_CREDENTIALS"
-            )
-        
-        if not user.is_active:
-            raise_http_exception(
-                message="Inactive user account",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error_code="USER_INACTIVE"
-            )
-        
-        if not user.company.is_active:
-            raise_http_exception(
-                message="Company account is inactive",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error_code="COMPANY_INACTIVE"
-            )
-        
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_jwt_access_token(
-            data={
-                "sub": user.username, 
-                "user_id": user.id,
-                "company_id": user.company_id,
-                "role": user.role.value
-            },
-            expires_delta=access_token_expires
-        )
-        
-        return user, access_token
+            
+            logger.info(f"Login successful for user: {user.username} (id: {user.id})")
+            
+            return user, access_token
+            
+        except Exception as e:
+            logger.error(f"Unexpected error during login for username/email: {login_data.username}", exc_info=True)
+            raise
     
     @staticmethod
     def change_user_password(db: Session, user: User, password_data: PasswordChange) -> None:

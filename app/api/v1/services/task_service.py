@@ -73,6 +73,43 @@ class TaskService:
             logger.error(f"Failed to sync task {task.id} to vector store: {str(e)}")
             # Don't fail the main operation if vector sync fails
         
+        # Emit WebSocket event if task is assigned to an employee
+        if task.assigned_to_employee_id:
+            try:
+                from app.api.v1.services.websocket_service import websocket_service
+                from app.api.v1.models.user_model import User
+                from app.api.v1.utils.websocket_helper import emit_websocket_event_async
+                
+                # Get creator user info
+                creator_user = db.query(User).filter(User.id == creator_user_id).first()
+                creator_name = creator_user.full_name if creator_user else "Admin"
+                
+                # Get user_id from employee_id (User.employee_id references Employee.id)
+                assigned_user = db.query(User).filter(
+                    User.employee_id == task.assigned_to_employee_id,
+                    User.company_id == company_id
+                ).first()
+                
+                if assigned_user:
+                    # User exists, send notification to that user
+                    emit_websocket_event_async(
+                        websocket_service.emit_task_assigned(
+                            db=db,
+                            tenant_id=company_id,
+                            task_id=task.id,
+                            task_name=task.title,
+                            assigned_to=assigned_user.id,  # Use user_id
+                            assigned_by=creator_user_id,
+                            assigned_by_name=creator_name
+                        )
+                    )
+                else:
+                    # Employee doesn't have a user account yet, log but don't fail
+                    logger.info(f"Task {task.id} assigned to employee {task.assigned_to_employee_id} but no user account found")
+            except Exception as e:
+                # Don't fail task creation if WebSocket fails
+                logger.error(f"Failed to emit task_assigned WebSocket event: {e}")
+        
         return task
 
     @staticmethod
@@ -124,7 +161,7 @@ class TaskService:
 
     @staticmethod
     def update_task(
-        db: Session, company_id: int, task_id: int, data: TaskUpdate
+        db: Session, company_id: int, task_id: int, data: TaskUpdate, current_user_id: Optional[int] = None
     ) -> Task:
         task = TaskService.get_task_by_id(db, company_id, task_id)
 
@@ -157,6 +194,9 @@ class TaskService:
                     )
             # allow setting to None to unassign from project
 
+        # Track old status for WebSocket event
+        old_status = task.status.value if task.status else None
+        
         # Apply updates
         update_data = data.model_dump(exclude_unset=True)
         for field, value in update_data.items():
@@ -173,11 +213,116 @@ class TaskService:
             logger.error(f"Failed to sync task {task.id} to vector store after update: {str(e)}")
             # Don't fail the main operation if vector sync fails
         
+        # Emit WebSocket event if status changed
+        new_status = task.status.value if task.status else None
+        if old_status and new_status and old_status != new_status:
+            try:
+                from app.api.v1.services.websocket_service import websocket_service
+                from app.api.v1.models.user_model import User
+                from app.api.v1.utils.websocket_helper import emit_websocket_event_async
+                
+                # Get current user who made the update
+                updater_name = "Admin"
+                updater_user = None
+                if current_user_id:
+                    updater_user = db.query(User).filter(User.id == current_user_id).first()
+                    if updater_user:
+                        updater_name = updater_user.full_name
+                        # If employee updated, notify admin
+                        if updater_user.role.value == "employee":
+                            # Employee updated task - notify admin
+                            emit_websocket_event_async(
+                                websocket_service.emit_task_status_updated(
+                                    db=db,
+                                    tenant_id=company_id,
+                                    task_id=task.id,
+                                    task_name=task.title,
+                                    employee_name=updater_name,
+                                    new_status=new_status,
+                                    old_status=old_status,
+                                    assigned_to_employee_id=task.assigned_to_employee_id,
+                                    created_by_user_id=task.created_by_user_id
+                                )
+                            )
+                        else:
+                            # Admin updated task - notify assigned employee if exists
+                            if task.assigned_to_employee_id:
+                                assigned_user = db.query(User).filter(User.employee_id == task.assigned_to_employee_id).first()
+                                if assigned_user:
+                                    emit_websocket_event_async(
+                                        websocket_service.emit_task_status_updated(
+                                            db=db,
+                                            tenant_id=company_id,
+                                            task_id=task.id,
+                                            task_name=task.title,
+                                            employee_name=updater_name,
+                                            new_status=new_status,
+                                            old_status=old_status,
+                                            assigned_to_employee_id=task.assigned_to_employee_id,
+                                            created_by_user_id=task.created_by_user_id
+                                        )
+                                    )
+                else:
+                    # Fallback: notify admin
+                    emit_websocket_event_async(
+                        websocket_service.emit_task_status_updated(
+                            db=db,
+                            tenant_id=company_id,
+                            task_id=task.id,
+                            task_name=task.title,
+                            employee_name=updater_name,
+                            new_status=new_status,
+                            old_status=old_status,
+                            assigned_to_employee_id=task.assigned_to_employee_id,
+                            created_by_user_id=task.created_by_user_id
+                        )
+                    )
+            except Exception as e:
+                # Don't fail task update if WebSocket fails
+                logger.error(f"Failed to emit task_status_updated WebSocket event: {e}")
+        
+        # Emit WebSocket event if task was reassigned
+        if data.assigned_to_employee_id is not None and data.assigned_to_employee_id != task.assigned_to_employee_id:
+            if data.assigned_to_employee_id:  # Only if assigned (not unassigned)
+                try:
+                    from app.api.v1.services.websocket_service import websocket_service
+                    from app.api.v1.models.user_model import User
+                    from app.api.v1.utils.websocket_helper import emit_websocket_event_async
+                    
+                    # Get creator user info
+                    creator_user = db.query(User).filter(User.id == task.created_by_user_id).first()
+                    creator_name = creator_user.full_name if creator_user else "Admin"
+                    
+                    # Get user_id from employee_id
+                    assigned_user = db.query(User).filter(
+                        User.employee_id == data.assigned_to_employee_id,
+                        User.company_id == company_id
+                    ).first()
+                    
+                    if assigned_user:
+                        emit_websocket_event_async(
+                            websocket_service.emit_task_assigned(
+                                db=db,
+                                tenant_id=company_id,
+                                task_id=task.id,
+                                task_name=task.title,
+                                assigned_to=assigned_user.id,  # Use user_id
+                                assigned_by=task.created_by_user_id,
+                                assigned_by_name=creator_name
+                            )
+                        )
+                    else:
+                        logger.info(f"Task {task.id} reassigned to employee {data.assigned_to_employee_id} but no user account found")
+                except Exception as e:
+                    # Don't fail task update if WebSocket fails
+                    logger.error(f"Failed to emit task_assigned WebSocket event on reassignment: {e}")
+        
         return task
 
     @staticmethod
     def close_task(db: Session, company_id: int, task_id: int) -> Task:
         task = TaskService.get_task_by_id(db, company_id, task_id)
+        old_status = task.status.value if task.status else None
         task.status = TaskStatus.CLOSED
         db.commit()
         db.refresh(task)
@@ -189,6 +334,43 @@ class TaskService:
         except Exception as e:
             logger.error(f"Failed to sync task {task.id} to vector store after close: {str(e)}")
             # Don't fail the main operation if vector sync fails
+        
+        # Emit WebSocket event for status change
+        try:
+            from app.api.v1.services.websocket_service import websocket_service
+            from app.api.v1.models.user_model import User
+            from app.api.v1.utils.websocket_helper import emit_websocket_event_async
+            
+            # Get current user who closed the task (we'll need to pass this from route)
+            # For now, try to get from task creator or assigned employee
+            updater_name = "Admin"
+            if task.assigned_to_employee_id:
+                assigned_employee = db.query(Employee).filter(Employee.id == task.assigned_to_employee_id).first()
+                if assigned_employee:
+                    updater_name = assigned_employee.full_name
+            
+            # Get assigned user_id for notification
+            assigned_user_id = None
+            if task.assigned_to_employee_id:
+                assigned_user = db.query(User).filter(User.employee_id == task.assigned_to_employee_id).first()
+                assigned_user_id = assigned_user.id if assigned_user else None
+            
+            emit_websocket_event_async(
+                websocket_service.emit_task_status_updated(
+                    db=db,
+                    tenant_id=company_id,
+                    task_id=task.id,
+                    task_name=task.title,
+                    employee_name=updater_name,
+                    new_status="CLOSED",
+                    old_status=old_status,
+                    assigned_to_employee_id=task.assigned_to_employee_id,
+                    created_by_user_id=task.created_by_user_id
+                )
+            )
+        except Exception as e:
+            # Don't fail task close if WebSocket fails
+            logger.error(f"Failed to emit task_status_updated WebSocket event on close: {e}")
         
         return task
 

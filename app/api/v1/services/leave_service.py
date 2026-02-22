@@ -201,6 +201,36 @@ class LeaveService:
         db.commit()
         db.refresh(leave_request)
         
+        # Emit WebSocket event for leave application (employee → admin)
+        try:
+            from app.api.v1.services.websocket_service import websocket_service
+            from app.api.v1.models.employee_model import Employee
+            from app.api.v1.models.leave_model import LeaveType
+            from app.api.v1.utils.websocket_helper import emit_websocket_event_async
+            
+            # Get employee and leave type info
+            employee = db.query(Employee).filter(Employee.id == employee_id).first()
+            leave_type = db.query(LeaveType).filter(LeaveType.id == leave_type_id).first()
+            
+            if employee and leave_type:
+                emit_websocket_event_async(
+                    websocket_service.emit_leave_applied(
+                        db=db,
+                        tenant_id=company_id,
+                        leave_request_id=leave_request.id,
+                        employee_id=employee_id,
+                        employee_name=employee.full_name,
+                        leave_type_name=leave_type.name,
+                        start_date=start_date.isoformat(),
+                        end_date=end_date.isoformat(),
+                        number_of_days=number_of_days
+                    )
+                )
+        except Exception as e:
+            # Don't fail leave application if WebSocket fails
+            import logging
+            logging.getLogger(__name__).error(f"Failed to emit leave_applied WebSocket event: {e}")
+        
         return leave_request
     
     def approve_leave(
@@ -273,6 +303,41 @@ class LeaveService:
         
         db.commit()
         db.refresh(leave_request)
+        
+        # Emit WebSocket event for leave approval/rejection (admin → employee)
+        try:
+            from app.api.v1.services.websocket_service import websocket_service
+            from app.api.v1.models.employee_model import Employee
+            from app.api.v1.models.leave_model import LeaveType
+            from app.api.v1.models.user_model import User
+            from app.api.v1.utils.websocket_helper import emit_websocket_event_async
+            
+            # Get employee, leave type, and approver info
+            employee = db.query(Employee).filter(Employee.id == leave_request.employee_id).first()
+            leave_type = db.query(LeaveType).filter(LeaveType.id == leave_request.leave_type_id).first()
+            approver = db.query(User).filter(User.id == approver_user_id).first()
+            
+            if employee and leave_type and approver:
+                emit_websocket_event_async(
+                    websocket_service.emit_leave_approved(
+                        db=db,
+                        tenant_id=leave_request.company_id,
+                        leave_request_id=leave_request.id,
+                        employee_id=leave_request.employee_id,
+                        employee_name=employee.full_name,
+                        leave_type_name=leave_type.name,
+                        start_date=leave_request.start_date.isoformat(),
+                        end_date=leave_request.end_date.isoformat(),
+                        number_of_days=leave_request.number_of_days,
+                        approved_by_name=approver.full_name,
+                        approved=approved,
+                        rejection_reason=rejection_reason
+                    )
+                )
+        except Exception as e:
+            # Don't fail leave approval if WebSocket fails
+            import logging
+            logging.getLogger(__name__).error(f"Failed to emit leave_approved WebSocket event: {e}")
         
         return leave_request
     

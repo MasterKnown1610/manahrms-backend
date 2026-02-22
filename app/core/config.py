@@ -53,6 +53,13 @@ class Settings(BaseSettings):
     S3_BUCKET_NAME: Optional[str] = Field(default=None, description="S3 bucket name for file storage")
     S3_ENDPOINT_URL: Optional[str] = Field(default=None, description="Custom S3 endpoint URL (for S3-compatible services like DigitalOcean Spaces)")
     
+    # Redis Settings (for WebSocket Pub/Sub)
+    REDIS_URL: Optional[str] = Field(default=None, description="Redis connection URL (e.g., redis://localhost:6379)")
+    REDIS_HOST: str = Field(default="localhost", description="Redis host")
+    REDIS_PORT: int = Field(default=6379, description="Redis port")
+    REDIS_PASSWORD: Optional[str] = Field(default=None, description="Redis password")
+    REDIS_DB: int = Field(default=0, description="Redis database number")
+    
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_file=".env",

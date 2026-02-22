@@ -175,7 +175,7 @@ async def update_task_information(
         if data.assigned_to_employee_id is not None and data.assigned_to_employee_id != task.assigned_to_employee_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Employees cannot reassign tasks")
 
-    updated = TaskService.update_task(db, current_user.company_id, task_id, data)
+    updated = TaskService.update_task(db, current_user.company_id, task_id, data, current_user.id)
     # Reload with relationships
     task_with_relations = (
         db.query(Task)

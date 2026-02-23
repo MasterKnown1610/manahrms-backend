@@ -164,6 +164,19 @@ async def websocket_endpoint(
         # Connect and join rooms
         connection_id = await manager.connect(websocket, user, subscription_plan)
         
+        # Send connection confirmation
+        await websocket.send_json({
+            "event": EventType.CONNECTED.value,
+            "tenant_id": str(user.company_id),
+            "user_id": str(user.id),
+            "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+            "subscription_plan": subscription_plan.value,
+            "timestamp": asyncio.get_event_loop().time(),
+            "message": "WebSocket connection established"
+        })
+        
+        logger.info(f"WebSocket connected successfully: {connection_id}")
+        
         # Note: Redis subscription is handled globally, not per connection
         # The listener is started once on application startup
         

@@ -46,25 +46,40 @@ async def authenticate_websocket(
     # Get database session
     db = next(get_database_session())
     try:
-        user = db.query(User).filter(User.username == username).first()
+        from sqlalchemy.orm import joinedload
+        # Load user with company relationship to avoid lazy loading issues
+        user = db.query(User).options(joinedload(User.company)).filter(User.username == username).first()
         
         if user is None:
+            logger.warning(f"WebSocket authentication failed: User not found - {username}")
             await websocket.close(code=1008, reason="User not found")
             return None
         
         if not user.is_active:
+            logger.warning(f"WebSocket authentication failed: Inactive user - {username}")
             await websocket.close(code=1008, reason="User account is inactive")
             return None
         
+        # Check if company relationship is loaded
+        if not hasattr(user, 'company') or user.company is None:
+            logger.error(f"WebSocket authentication failed: Company not found for user - {username}")
+            await websocket.close(code=1011, reason="Company information not found")
+            return None
+        
         if not user.company.is_active:
+            logger.warning(f"WebSocket authentication failed: Inactive company - {user.company_id}")
             await websocket.close(code=1008, reason="Company account is inactive")
             return None
         
+        logger.info(f"WebSocket authentication successful: {username} (user_id: {user.id}, company_id: {user.company_id})")
         return user
         
     except Exception as e:
-        logger.error(f"Error authenticating WebSocket: {e}")
-        await websocket.close(code=1011, reason="Internal server error")
+        logger.error(f"Error authenticating WebSocket: {e}", exc_info=True)
+        try:
+            await websocket.close(code=1011, reason="Internal server error")
+        except:
+            pass
         return None
     finally:
         db.close()

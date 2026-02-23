@@ -24,6 +24,12 @@ class EventType(str, Enum):
     LEAVE_REJECTED = "LEAVE_REJECTED"
     EMPLOYEE_ACTIVITY = "EMPLOYEE_ACTIVITY"
     DASHBOARD_UPDATE = "DASHBOARD_UPDATE"
+    MEETING_CREATED = "MEETING_CREATED"
+    MEETING_UPDATED = "MEETING_UPDATED"
+    MEETING_CANCELLED = "MEETING_CANCELLED"
+    EVENT_CREATED = "EVENT_CREATED"
+    EVENT_UPDATED = "EVENT_UPDATED"
+    EVENT_CANCELLED = "EVENT_CANCELLED"
     PING = "PING"
     PONG = "PONG"
     ERROR = "ERROR"
@@ -134,6 +140,75 @@ class WebSocketConnectionInfo(BaseModel):
     subscription_plan: SubscriptionPlan
     connected_at: datetime = Field(default_factory=datetime.utcnow)
     rooms: list[str] = Field(default_factory=list)
+
+
+class MeetingCreatedEvent(BaseModel):
+    """Meeting created event payload"""
+    event: EventType = EventType.MEETING_CREATED
+    tenant_id: str
+    meeting_id: str
+    meeting_title: str
+    created_by: str
+    created_by_name: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MeetingUpdatedEvent(BaseModel):
+    """Meeting updated event payload"""
+    event: EventType = EventType.MEETING_UPDATED
+    tenant_id: str
+    meeting_id: str
+    meeting_title: str
+    updated_by: str
+    updated_by_name: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class MeetingCancelledEvent(BaseModel):
+    """Meeting cancelled/deleted event payload"""
+    event: EventType = EventType.MEETING_CANCELLED
+    tenant_id: str
+    meeting_id: str
+    meeting_title: str
+    cancelled_by: str
+    cancelled_by_name: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EventCreatedEvent(BaseModel):
+    """Event created event payload"""
+    event: EventType = EventType.EVENT_CREATED
+    tenant_id: str
+    event_id: str
+    event_title: str
+    event_type: str
+    created_by: str
+    created_by_name: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EventUpdatedEvent(BaseModel):
+    """Event updated event payload"""
+    event: EventType = EventType.EVENT_UPDATED
+    tenant_id: str
+    event_id: str
+    event_title: str
+    event_type: str
+    updated_by: str
+    updated_by_name: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+
+class EventCancelledEvent(BaseModel):
+    """Event cancelled/deleted event payload"""
+    event: EventType = EventType.EVENT_CANCELLED
+    tenant_id: str
+    event_id: str
+    event_title: str
+    event_type: str
+    cancelled_by: str
+    cancelled_by_name: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class WebSocketError(BaseModel):

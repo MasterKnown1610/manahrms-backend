@@ -18,4 +18,6 @@ from app.api.v1.models.attendance_model import Attendance  # noqa
 from app.api.v1.models.employee_attachment_model import EmployeeAttachment  # noqa
 from app.api.v1.models.vector_store_model import VectorStore  # noqa
 from app.api.v1.models.leave_model import LeaveType, LeaveRequest, LeaveBalance  # noqa
-from app.api.v1.models.chat_model import ChatRoom, ChatRoomMember, ChatMessage  # noqa  # noqa
+from app.api.v1.models.chat_model import ChatRoom, ChatRoomMember, ChatMessage  # noqa
+from app.api.v1.models.meeting_model import Meeting, MeetingParticipant  # noqa
+from app.api.v1.models.event_model import Event, EventParticipant  # noqa

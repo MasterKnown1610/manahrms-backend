@@ -17,7 +17,13 @@ from app.api.v1.schemas.websocket_schema import (
     LeaveAppliedEvent,
     LeaveApprovedEvent,
     EmployeeActivityEvent,
-    DashboardUpdateEvent
+    DashboardUpdateEvent,
+    MeetingCreatedEvent,
+    MeetingUpdatedEvent,
+    MeetingCancelledEvent,
+    EventCreatedEvent,
+    EventUpdatedEvent,
+    EventCancelledEvent
 )
 
 logger = logging.getLogger(__name__)
@@ -222,6 +228,162 @@ class WebSocketService:
             
         except Exception as e:
             logger.error(f"Error emitting dashboard_update event: {e}")
+    
+    @staticmethod
+    async def emit_meeting_created(
+        db: Session,
+        tenant_id: int,
+        meeting_id: int,
+        meeting_title: str,
+        created_by: int,
+        created_by_name: str
+    ):
+        """Emit meeting created event"""
+        try:
+            event_data = {
+                "tenant_id": str(tenant_id),
+                "meeting_id": str(meeting_id),
+                "meeting_title": meeting_title,
+                "created_by": str(created_by),
+                "created_by_name": created_by_name
+            }
+            
+            await event_handler.handle_meeting_created(event_data, db)
+            logger.info(f"Meeting created event emitted: {meeting_title}")
+            
+        except Exception as e:
+            logger.error(f"Error emitting meeting_created event: {e}")
+    
+    @staticmethod
+    async def emit_meeting_updated(
+        db: Session,
+        tenant_id: int,
+        meeting_id: int,
+        meeting_title: str,
+        updated_by: int,
+        updated_by_name: str
+    ):
+        """Emit meeting updated event"""
+        try:
+            event_data = {
+                "tenant_id": str(tenant_id),
+                "meeting_id": str(meeting_id),
+                "meeting_title": meeting_title,
+                "updated_by": str(updated_by),
+                "updated_by_name": updated_by_name
+            }
+            
+            await event_handler.handle_meeting_updated(event_data, db)
+            logger.info(f"Meeting updated event emitted: {meeting_title}")
+            
+        except Exception as e:
+            logger.error(f"Error emitting meeting_updated event: {e}")
+    
+    @staticmethod
+    async def emit_meeting_cancelled(
+        db: Session,
+        tenant_id: int,
+        meeting_id: int,
+        meeting_title: str,
+        cancelled_by: int,
+        cancelled_by_name: str
+    ):
+        """Emit meeting cancelled/deleted event"""
+        try:
+            event_data = {
+                "tenant_id": str(tenant_id),
+                "meeting_id": str(meeting_id),
+                "meeting_title": meeting_title,
+                "cancelled_by": str(cancelled_by),
+                "cancelled_by_name": cancelled_by_name
+            }
+            
+            await event_handler.handle_meeting_cancelled(event_data, db)
+            logger.info(f"Meeting cancelled event emitted: {meeting_title}")
+            
+        except Exception as e:
+            logger.error(f"Error emitting meeting_cancelled event: {e}")
+    
+    @staticmethod
+    async def emit_event_created(
+        db: Session,
+        tenant_id: int,
+        event_id: int,
+        event_title: str,
+        event_type: str,
+        created_by: int,
+        created_by_name: str
+    ):
+        """Emit event created event"""
+        try:
+            event_data = {
+                "tenant_id": str(tenant_id),
+                "event_id": str(event_id),
+                "event_title": event_title,
+                "event_type": event_type,
+                "created_by": str(created_by),
+                "created_by_name": created_by_name
+            }
+            
+            await event_handler.handle_event_created(event_data, db)
+            logger.info(f"Event created event emitted: {event_title}")
+            
+        except Exception as e:
+            logger.error(f"Error emitting event_created event: {e}")
+    
+    @staticmethod
+    async def emit_event_updated(
+        db: Session,
+        tenant_id: int,
+        event_id: int,
+        event_title: str,
+        event_type: str,
+        updated_by: int,
+        updated_by_name: str
+    ):
+        """Emit event updated event"""
+        try:
+            event_data = {
+                "tenant_id": str(tenant_id),
+                "event_id": str(event_id),
+                "event_title": event_title,
+                "event_type": event_type,
+                "updated_by": str(updated_by),
+                "updated_by_name": updated_by_name
+            }
+            
+            await event_handler.handle_event_updated(event_data, db)
+            logger.info(f"Event updated event emitted: {event_title}")
+            
+        except Exception as e:
+            logger.error(f"Error emitting event_updated event: {e}")
+    
+    @staticmethod
+    async def emit_event_cancelled(
+        db: Session,
+        tenant_id: int,
+        event_id: int,
+        event_title: str,
+        event_type: str,
+        cancelled_by: int,
+        cancelled_by_name: str
+    ):
+        """Emit event cancelled/deleted event"""
+        try:
+            event_data = {
+                "tenant_id": str(tenant_id),
+                "event_id": str(event_id),
+                "event_title": event_title,
+                "event_type": event_type,
+                "cancelled_by": str(cancelled_by),
+                "cancelled_by_name": cancelled_by_name
+            }
+            
+            await event_handler.handle_event_cancelled(event_data, db)
+            logger.info(f"Event cancelled event emitted: {event_title}")
+            
+        except Exception as e:
+            logger.error(f"Error emitting event_cancelled event: {e}")
 
 
 # Global service instance

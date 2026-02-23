@@ -397,6 +397,367 @@ class EventHandler:
             
         except Exception as e:
             logger.error(f"Error handling leave_approved event: {e}")
+    
+    @staticmethod
+    async def handle_meeting_created(
+        event_data: Dict[str, Any],
+        db: Session,
+        connection_id: Optional[str] = None
+    ):
+        """
+        Handle MEETING_CREATED event
+        Broadcasts to: All meeting participants
+        """
+        try:
+            tenant_id = event_data.get('tenant_id')
+            meeting_id = event_data.get('meeting_id')
+            meeting_title = event_data.get('meeting_title')
+            created_by = event_data.get('created_by')
+            created_by_name = event_data.get('created_by_name', 'Admin')
+            
+            message = {
+                "event": EventType.MEETING_CREATED.value,
+                "tenant_id": str(tenant_id),
+                "meeting_id": str(meeting_id),
+                "meeting_title": meeting_title,
+                "created_by": str(created_by),
+                "created_by_name": created_by_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": f"New meeting created: {meeting_title}"
+            }
+            
+            # Broadcast to all participants of the meeting
+            # Get meeting participants from database
+            from app.api.v1.models.meeting_model import Meeting, MeetingParticipant
+            
+            meeting = db.query(Meeting).filter(Meeting.id == int(meeting_id)).first()
+            if meeting:
+                participants = db.query(MeetingParticipant).filter(
+                    MeetingParticipant.meeting_id == int(meeting_id)
+                ).all()
+                
+                for participant in participants:
+                    await manager.send_to_user(
+                        tenant_id=int(tenant_id),
+                        user_id=participant.user_id,
+                        message=message
+                    )
+            
+            # Also broadcast to tenant (for admin visibility)
+            await manager.broadcast_to_tenant(
+                tenant_id=int(tenant_id),
+                message=message,
+                exclude_connection_id=connection_id
+            )
+            
+            # Publish to Redis
+            if redis_pubsub.is_connected:
+                channel = redis_pubsub.get_tenant_channel(int(tenant_id))
+                await redis_pubsub.publish(channel, message)
+            
+            logger.info(f"Meeting created event broadcasted: {meeting_title}")
+            
+        except Exception as e:
+            logger.error(f"Error handling meeting_created event: {e}")
+    
+    @staticmethod
+    async def handle_meeting_updated(
+        event_data: Dict[str, Any],
+        db: Session,
+        connection_id: Optional[str] = None
+    ):
+        """
+        Handle MEETING_UPDATED event
+        Broadcasts to: All meeting participants
+        """
+        try:
+            tenant_id = event_data.get('tenant_id')
+            meeting_id = event_data.get('meeting_id')
+            meeting_title = event_data.get('meeting_title')
+            updated_by = event_data.get('updated_by')
+            updated_by_name = event_data.get('updated_by_name', 'Admin')
+            
+            message = {
+                "event": EventType.MEETING_UPDATED.value,
+                "tenant_id": str(tenant_id),
+                "meeting_id": str(meeting_id),
+                "meeting_title": meeting_title,
+                "updated_by": str(updated_by),
+                "updated_by_name": updated_by_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": f"Meeting updated: {meeting_title}"
+            }
+            
+            # Broadcast to all participants
+            from app.api.v1.models.meeting_model import MeetingParticipant
+            
+            participants = db.query(MeetingParticipant).filter(
+                MeetingParticipant.meeting_id == int(meeting_id)
+            ).all()
+            
+            for participant in participants:
+                await manager.send_to_user(
+                    tenant_id=int(tenant_id),
+                    user_id=participant.user_id,
+                    message=message
+                )
+            
+            # Publish to Redis
+            if redis_pubsub.is_connected:
+                channel = redis_pubsub.get_tenant_channel(int(tenant_id))
+                await redis_pubsub.publish(channel, message)
+            
+            logger.info(f"Meeting updated event broadcasted: {meeting_title}")
+            
+        except Exception as e:
+            logger.error(f"Error handling meeting_updated event: {e}")
+    
+    @staticmethod
+    async def handle_meeting_cancelled(
+        event_data: Dict[str, Any],
+        db: Session,
+        connection_id: Optional[str] = None
+    ):
+        """
+        Handle MEETING_CANCELLED event
+        Broadcasts to: All meeting participants
+        """
+        try:
+            tenant_id = event_data.get('tenant_id')
+            meeting_id = event_data.get('meeting_id')
+            meeting_title = event_data.get('meeting_title')
+            cancelled_by = event_data.get('cancelled_by')
+            cancelled_by_name = event_data.get('cancelled_by_name', 'Admin')
+            
+            message = {
+                "event": EventType.MEETING_CANCELLED.value,
+                "tenant_id": str(tenant_id),
+                "meeting_id": str(meeting_id),
+                "meeting_title": meeting_title,
+                "cancelled_by": str(cancelled_by),
+                "cancelled_by_name": cancelled_by_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": f"Meeting cancelled: {meeting_title}"
+            }
+            
+            # Broadcast to all participants (if meeting still exists in DB)
+            # Note: Meeting might be deleted, so we try to get participants first
+            from app.api.v1.models.meeting_model import MeetingParticipant
+            
+            try:
+                participants = db.query(MeetingParticipant).filter(
+                    MeetingParticipant.meeting_id == int(meeting_id)
+                ).all()
+                
+                for participant in participants:
+                    await manager.send_to_user(
+                        tenant_id=int(tenant_id),
+                        user_id=participant.user_id,
+                        message=message
+                    )
+            except Exception:
+                # Meeting already deleted, broadcast to tenant
+                pass
+            
+            # Broadcast to tenant
+            await manager.broadcast_to_tenant(
+                tenant_id=int(tenant_id),
+                message=message,
+                exclude_connection_id=connection_id
+            )
+            
+            # Publish to Redis
+            if redis_pubsub.is_connected:
+                channel = redis_pubsub.get_tenant_channel(int(tenant_id))
+                await redis_pubsub.publish(channel, message)
+            
+            logger.info(f"Meeting cancelled event broadcasted: {meeting_title}")
+            
+        except Exception as e:
+            logger.error(f"Error handling meeting_cancelled event: {e}")
+    
+    @staticmethod
+    async def handle_event_created(
+        event_data: Dict[str, Any],
+        db: Session,
+        connection_id: Optional[str] = None
+    ):
+        """
+        Handle EVENT_CREATED event
+        Broadcasts to: All users based on event visibility
+        """
+        try:
+            tenant_id = event_data.get('tenant_id')
+            event_id = event_data.get('event_id')
+            event_title = event_data.get('event_title')
+            event_type = event_data.get('event_type')
+            created_by = event_data.get('created_by')
+            created_by_name = event_data.get('created_by_name', 'Admin')
+            
+            message = {
+                "event": EventType.EVENT_CREATED.value,
+                "tenant_id": str(tenant_id),
+                "event_id": str(event_id),
+                "event_title": event_title,
+                "event_type": event_type,
+                "created_by": str(created_by),
+                "created_by_name": created_by_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": f"New event created: {event_title}"
+            }
+            
+            # Broadcast based on event visibility
+            from app.api.v1.models.event_model import Event, EventParticipant, EventVisibility
+            
+            event = db.query(Event).filter(Event.id == int(event_id)).first()
+            if event:
+                if event.visibility == EventVisibility.ALL:
+                    # Broadcast to all tenant users
+                    await manager.broadcast_to_tenant(
+                        tenant_id=int(tenant_id),
+                        message=message,
+                        exclude_connection_id=connection_id
+                    )
+                elif event.visibility == EventVisibility.DEPARTMENT:
+                    # Broadcast to department users (handled by role-based rooms)
+                    # For now, broadcast to tenant and let frontend filter
+                    await manager.broadcast_to_tenant(
+                        tenant_id=int(tenant_id),
+                        message=message,
+                        exclude_connection_id=connection_id
+                    )
+                elif event.visibility == EventVisibility.SELECTED_USERS:
+                    # Send to selected users only
+                    participants = db.query(EventParticipant).filter(
+                        EventParticipant.event_id == int(event_id)
+                    ).all()
+                    
+                    for participant in participants:
+                        await manager.send_to_user(
+                            tenant_id=int(tenant_id),
+                            user_id=participant.user_id,
+                            message=message
+                        )
+            
+            # Publish to Redis
+            if redis_pubsub.is_connected:
+                channel = redis_pubsub.get_tenant_channel(int(tenant_id))
+                await redis_pubsub.publish(channel, message)
+            
+            logger.info(f"Event created event broadcasted: {event_title}")
+            
+        except Exception as e:
+            logger.error(f"Error handling event_created event: {e}")
+    
+    @staticmethod
+    async def handle_event_updated(
+        event_data: Dict[str, Any],
+        db: Session,
+        connection_id: Optional[str] = None
+    ):
+        """
+        Handle EVENT_UPDATED event
+        Broadcasts to: All users based on event visibility
+        """
+        try:
+            tenant_id = event_data.get('tenant_id')
+            event_id = event_data.get('event_id')
+            event_title = event_data.get('event_title')
+            event_type = event_data.get('event_type')
+            updated_by = event_data.get('updated_by')
+            updated_by_name = event_data.get('updated_by_name', 'Admin')
+            
+            message = {
+                "event": EventType.EVENT_UPDATED.value,
+                "tenant_id": str(tenant_id),
+                "event_id": str(event_id),
+                "event_title": event_title,
+                "event_type": event_type,
+                "updated_by": str(updated_by),
+                "updated_by_name": updated_by_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": f"Event updated: {event_title}"
+            }
+            
+            # Broadcast based on event visibility (similar to created)
+            from app.api.v1.models.event_model import Event, EventParticipant, EventVisibility
+            
+            event = db.query(Event).filter(Event.id == int(event_id)).first()
+            if event:
+                if event.visibility == EventVisibility.ALL:
+                    await manager.broadcast_to_tenant(
+                        tenant_id=int(tenant_id),
+                        message=message,
+                        exclude_connection_id=connection_id
+                    )
+                elif event.visibility == EventVisibility.SELECTED_USERS:
+                    participants = db.query(EventParticipant).filter(
+                        EventParticipant.event_id == int(event_id)
+                    ).all()
+                    
+                    for participant in participants:
+                        await manager.send_to_user(
+                            tenant_id=int(tenant_id),
+                            user_id=participant.user_id,
+                            message=message
+                        )
+            
+            # Publish to Redis
+            if redis_pubsub.is_connected:
+                channel = redis_pubsub.get_tenant_channel(int(tenant_id))
+                await redis_pubsub.publish(channel, message)
+            
+            logger.info(f"Event updated event broadcasted: {event_title}")
+            
+        except Exception as e:
+            logger.error(f"Error handling event_updated event: {e}")
+    
+    @staticmethod
+    async def handle_event_cancelled(
+        event_data: Dict[str, Any],
+        db: Session,
+        connection_id: Optional[str] = None
+    ):
+        """
+        Handle EVENT_CANCELLED event
+        Broadcasts to: All users based on event visibility
+        """
+        try:
+            tenant_id = event_data.get('tenant_id')
+            event_id = event_data.get('event_id')
+            event_title = event_data.get('event_title')
+            event_type = event_data.get('event_type')
+            cancelled_by = event_data.get('cancelled_by')
+            cancelled_by_name = event_data.get('cancelled_by_name', 'Admin')
+            
+            message = {
+                "event": EventType.EVENT_CANCELLED.value,
+                "tenant_id": str(tenant_id),
+                "event_id": str(event_id),
+                "event_title": event_title,
+                "event_type": event_type,
+                "cancelled_by": str(cancelled_by),
+                "cancelled_by_name": cancelled_by_name,
+                "timestamp": datetime.utcnow().isoformat(),
+                "message": f"Event cancelled: {event_title}"
+            }
+            
+            # Broadcast to tenant (event might be deleted, so broadcast widely)
+            await manager.broadcast_to_tenant(
+                tenant_id=int(tenant_id),
+                message=message,
+                exclude_connection_id=connection_id
+            )
+            
+            # Publish to Redis
+            if redis_pubsub.is_connected:
+                channel = redis_pubsub.get_tenant_channel(int(tenant_id))
+                await redis_pubsub.publish(channel, message)
+            
+            logger.info(f"Event cancelled event broadcasted: {event_title}")
+            
+        except Exception as e:
+            logger.error(f"Error handling event_cancelled event: {e}")
 
 
 # Event handler instance

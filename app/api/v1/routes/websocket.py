@@ -76,6 +76,55 @@ async def handle_redis_message(message_data: dict):
             for role in ['ADMIN', 'HR']:
                 await manager.broadcast_to_role(tenant_id, role, message_data)
         
+        elif event_type == EventType.MEETING_CREATED.value:
+            # Broadcast to all participants (handled in event handler)
+            # Get db session for meeting handlers
+            db_session = next(get_database_session())
+            try:
+                await event_handler.handle_meeting_created(message_data, db_session)
+            finally:
+                db_session.close()
+        
+        elif event_type == EventType.MEETING_UPDATED.value:
+            # Broadcast to all participants (handled in event handler)
+            db_session = next(get_database_session())
+            try:
+                await event_handler.handle_meeting_updated(message_data, db_session)
+            finally:
+                db_session.close()
+        
+        elif event_type == EventType.MEETING_CANCELLED.value:
+            # Broadcast to all participants (handled in event handler)
+            db_session = next(get_database_session())
+            try:
+                await event_handler.handle_meeting_cancelled(message_data, db_session)
+            finally:
+                db_session.close()
+        
+        elif event_type == EventType.EVENT_CREATED.value:
+            # Broadcast based on visibility (handled in event handler)
+            db_session = next(get_database_session())
+            try:
+                await event_handler.handle_event_created(message_data, db_session)
+            finally:
+                db_session.close()
+        
+        elif event_type == EventType.EVENT_UPDATED.value:
+            # Broadcast based on visibility (handled in event handler)
+            db_session = next(get_database_session())
+            try:
+                await event_handler.handle_event_updated(message_data, db_session)
+            finally:
+                db_session.close()
+        
+        elif event_type == EventType.EVENT_CANCELLED.value:
+            # Broadcast to tenant (handled in event handler)
+            db_session = next(get_database_session())
+            try:
+                await event_handler.handle_event_cancelled(message_data, db_session)
+            finally:
+                db_session.close()
+        
     except Exception as e:
         logger.error(f"Error handling Redis message: {e}")
 

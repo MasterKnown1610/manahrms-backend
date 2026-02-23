@@ -204,11 +204,13 @@ def check_application_health(db: Session = Depends(get_database_session)):
         }
 
 
-app.include_router(api_router, prefix=settings.API_V1_PREFIX)
-
-# Include WebSocket router (no prefix for /ws endpoint)
+# Include WebSocket router FIRST (no prefix for /ws endpoint)
+# This must be before api_router to ensure /ws route is registered
 from app.api.v1.routes import websocket
 app.include_router(websocket.router)
+
+# Include API router with /api/v1 prefix
+app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 
 
 if __name__ == "__main__":

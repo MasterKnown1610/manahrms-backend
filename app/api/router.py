@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.routes import auth, employees, departments, tasks, projects, attendance, ai_chat, vector_sync, leaves, dashboard, chat, websocket, meetings, events, calendar
+from app.api.v1.routes import auth, employees, departments, tasks, projects, attendance, ai_chat, vector_sync, leaves, dashboard, chat, meetings, events, calendar
 
 api_router = APIRouter()
 
@@ -15,7 +15,7 @@ api_router.include_router(vector_sync.router)
 api_router.include_router(leaves.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(chat.router)
-api_router.include_router(websocket.router)
+# WebSocket router is included directly in main.py (not here) to avoid /api/v1 prefix
 api_router.include_router(meetings.router)
 api_router.include_router(events.router)
 api_router.include_router(calendar.router)

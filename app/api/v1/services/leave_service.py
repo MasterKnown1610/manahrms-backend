@@ -204,8 +204,6 @@ class LeaveService:
         # Emit WebSocket event for leave application (employee → admin)
         try:
             from app.api.v1.services.websocket_service import websocket_service
-            from app.api.v1.models.employee_model import Employee
-            from app.api.v1.models.leave_model import LeaveType
             from app.api.v1.utils.websocket_helper import emit_websocket_event_async
             
             # Get employee and leave type info
@@ -307,9 +305,6 @@ class LeaveService:
         # Emit WebSocket event for leave approval/rejection (admin → employee)
         try:
             from app.api.v1.services.websocket_service import websocket_service
-            from app.api.v1.models.employee_model import Employee
-            from app.api.v1.models.leave_model import LeaveType
-            from app.api.v1.models.user_model import User
             from app.api.v1.utils.websocket_helper import emit_websocket_event_async
             
             # Get employee, leave type, and approver info

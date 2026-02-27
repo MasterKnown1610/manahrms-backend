@@ -1,21 +1,23 @@
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
 from app.db.session import get_database_session
 from app.core.security import decode_and_verify_jwt_token
 from app.api.v1.models.user_model import User, UserRole
+from app.core.config import settings
 
-
-# HTTP Bearer token scheme
-security = HTTPBearer()
+# OAuth2 password bearer token scheme for FastAPI docs integration
+oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl=f"{settings.API_V1_PREFIX}/auth/token",
+    scheme_name="OAuth2PasswordBearer"
+)
 
 
 def get_current_authenticated_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_database_session)
 ) -> User:
-    token = credentials.credentials
     
     payload = decode_and_verify_jwt_token(token)
     if payload is None:

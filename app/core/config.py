@@ -60,6 +60,11 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = Field(default=None, description="Redis password")
     REDIS_DB: int = Field(default=0, description="Redis database number")
     
+    # Razorpay Settings
+    RAZORPAY_KEY_ID: Optional[str] = Field(default=None, description="Razorpay Key ID")
+    RAZORPAY_KEY_SECRET: Optional[str] = Field(default=None, description="Razorpay Key Secret")
+    RAZORPAY_WEBHOOK_SECRET: Optional[str] = Field(default=None, description="Razorpay Webhook Secret for signature verification")
+    
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_file=".env",

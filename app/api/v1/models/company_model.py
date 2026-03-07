@@ -80,6 +80,7 @@ class Company(Base):
     leave_types = relationship("LeaveType", back_populates="company", cascade="all, delete-orphan")
     meetings = relationship("Meeting", back_populates="company", cascade="all, delete-orphan")
     events = relationship("Event", back_populates="company", cascade="all, delete-orphan")
+    subscription = relationship("CompanySubscription", back_populates="company", uselist=False, cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Company {self.company_name}>"

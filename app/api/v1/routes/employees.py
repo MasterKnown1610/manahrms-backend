@@ -36,11 +36,27 @@ async def create_new_employee(
     current_user = Depends(require_admin_role),
     db: Session = Depends(get_database_session)
 ):
+    # Check seat availability before creating employee
+    from app.api.v1.services.subscription_service import SubscriptionService
+    can_add, error_message = SubscriptionService.check_seat_availability(
+        db=db,
+        company_id=current_user.company_id
+    )
+    
+    if not can_add:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=error_message or "Seat limit reached. Please upgrade your plan or increase seats."
+        )
+    
     employee, user, temp_password = EmployeeService.create_employee_with_credentials(
         db, 
         employee_data, 
         current_user.company_id
     )
+    
+    # Sync employee count after creation
+    SubscriptionService.sync_employee_count(db=db, company_id=current_user.company_id)
     
     return EmployeeWithCredentials(
         employee=EmployeeResponse.model_validate(employee),

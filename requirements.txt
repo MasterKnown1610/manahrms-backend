@@ -53,4 +53,7 @@ pgvector==0.2.4
 # AWS S3
 boto3==1.34.34
 
+# Payment Gateway
+razorpay>=1.4.0
+
 

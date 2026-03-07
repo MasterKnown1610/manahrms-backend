@@ -21,3 +21,7 @@ from app.api.v1.models.leave_model import LeaveType, LeaveRequest, LeaveBalance 
 from app.api.v1.models.chat_model import ChatRoom, ChatRoomMember, ChatMessage  # noqa
 from app.api.v1.models.meeting_model import Meeting, MeetingParticipant  # noqa
 from app.api.v1.models.event_model import Event, EventParticipant  # noqa
+from app.api.v1.models.subscription_model import (
+    SubscriptionPlan, CompanySubscription, SubscriptionUsage,
+    AIUsage, CompanyAIUsage, AIAddon, BillingCycle, SubscriptionStatus, AIAddonType
+)  # noqa

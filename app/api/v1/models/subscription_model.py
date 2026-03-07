@@ -88,7 +88,7 @@ class CompanySubscription(Base):
     # Relationships
     company = relationship("Company", back_populates="subscription")
     plan = relationship("SubscriptionPlan", back_populates="subscriptions")
-    usage = relationship("SubscriptionUsage", back_populates="subscription", uselist=False, primaryjoin="CompanySubscription.company_id == SubscriptionUsage.company_id")
+    usage = relationship("SubscriptionUsage", back_populates="subscription", uselist=False, foreign_keys="[SubscriptionUsage.subscription_id]")
     
     def __repr__(self):
         return f"<CompanySubscription Company:{self.company_id} Plan:{self.plan_id} Status:{self.status.value}>"
@@ -102,6 +102,7 @@ class SubscriptionUsage(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     company_id = Column(Integer, ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    subscription_id = Column(UUID(as_uuid=True), ForeignKey("company_subscriptions.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     employees_used = Column(Integer, nullable=False, default=0)  # Current number of employees
     billable_seats = Column(Integer, nullable=False, default=0)  # Current billable seats
     last_synced_at = Column(DateTime, default=datetime.utcnow)
@@ -109,7 +110,7 @@ class SubscriptionUsage(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
-    subscription = relationship("CompanySubscription", back_populates="usage", foreign_keys=[company_id], primaryjoin="SubscriptionUsage.company_id == CompanySubscription.company_id")
+    subscription = relationship("CompanySubscription", back_populates="usage", foreign_keys=[subscription_id])
     
     def __repr__(self):
         return f"<SubscriptionUsage Company:{self.company_id} Employees:{self.employees_used} Billable:{self.billable_seats}>"

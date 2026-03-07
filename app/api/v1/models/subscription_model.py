@@ -88,7 +88,7 @@ class CompanySubscription(Base):
     # Relationships
     company = relationship("Company", back_populates="subscription")
     plan = relationship("SubscriptionPlan", back_populates="subscriptions")
-    usage = relationship("SubscriptionUsage", back_populates="subscription", uselist=False)
+    usage = relationship("SubscriptionUsage", back_populates="subscription", uselist=False, primaryjoin="CompanySubscription.company_id == SubscriptionUsage.company_id")
     
     def __repr__(self):
         return f"<CompanySubscription Company:{self.company_id} Plan:{self.plan_id} Status:{self.status.value}>"

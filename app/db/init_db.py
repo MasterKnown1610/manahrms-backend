@@ -30,7 +30,13 @@ def initialize_database_on_startup():
             'leave_balances',  # Leave management
             'chat_rooms',  # Chat functionality
             'chat_room_members',  # Chat room members
-            'chat_messages'  # Chat messages
+            'chat_messages',  # Chat messages
+            'subscription_plans',  # Subscription plans
+            'company_subscriptions',  # Company subscriptions
+            'subscription_usage',  # Subscription usage tracking
+            'ai_usage',  # AI usage tracking
+            'company_ai_usage',  # Monthly AI usage summary
+            'ai_addons'  # AI add-on purchases
         ]
         
         # Check for missing tables

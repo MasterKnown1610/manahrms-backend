@@ -19,7 +19,7 @@ from app.api.v1.schemas.subscription_schema import (
 )
 from app.api.v1.services.subscription_service import SubscriptionService
 from app.api.v1.services.razorpay_service import razorpay_service
-from app.api.v1.dependencies import get_current_authenticated_user
+from app.api.v1.dependencies import get_current_authenticated_user, get_current_authenticated_user_allow_expired
 from app.api.v1.models.user_model import User
 from app.api.v1.models.subscription_model import AIAddonType
 from app.core.config import settings
@@ -44,7 +44,7 @@ async def get_subscription_plans(
 async def create_subscription(
     request: Request,
     subscription_data: SubscriptionCreateRequest,
-    current_user: User = Depends(get_current_authenticated_user),
+    current_user: User = Depends(get_current_authenticated_user_allow_expired),
     db: Session = Depends(get_database_session)
 ):
     """

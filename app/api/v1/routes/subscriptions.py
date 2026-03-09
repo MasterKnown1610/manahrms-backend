@@ -37,7 +37,20 @@ async def get_subscription_plans(
     Get all available subscription plans.
     """
     plans = SubscriptionService.get_all_plans(db)
-    return [SubscriptionPlanResponse.model_validate(plan) for plan in plans]
+    return [
+        SubscriptionPlanResponse(
+            id=str(plan.id),
+            name=plan.name,
+            plan_key=plan.plan_key,
+            price_per_user_monthly=plan.price_per_user_monthly,
+            price_per_user_yearly=plan.price_per_user_yearly,
+            minimum_seats=plan.minimum_seats,
+            ai_queries_limit=plan.ai_queries_limit,
+            features=plan.features,
+            is_active=plan.is_active
+        )
+        for plan in plans
+    ]
 
 
 @router.post("/create", response_model=SubscriptionResponse, status_code=status.HTTP_201_CREATED)
@@ -97,7 +110,17 @@ async def create_subscription(
         response = SubscriptionResponse(
             id=str(subscription.id),
             company_id=subscription.company_id,
-            plan=SubscriptionPlanResponse.model_validate(subscription.plan),
+            plan=SubscriptionPlanResponse(
+                id=str(subscription.plan.id),
+                name=subscription.plan.name,
+                plan_key=subscription.plan.plan_key,
+                price_per_user_monthly=subscription.plan.price_per_user_monthly,
+                price_per_user_yearly=subscription.plan.price_per_user_yearly,
+                minimum_seats=subscription.plan.minimum_seats,
+                ai_queries_limit=subscription.plan.ai_queries_limit,
+                features=subscription.plan.features,
+                is_active=subscription.plan.is_active
+            ),
             billing_cycle=subscription.billing_cycle,
             seat_count=subscription.seat_count,
             billable_seats=subscription.billable_seats,
@@ -106,7 +129,6 @@ async def create_subscription(
             status=subscription.status,
             current_period_start=subscription.current_period_start,
             current_period_end=subscription.current_period_end,
-            trial_end=subscription.trial_end,
             cancel_at_period_end=subscription.cancel_at_period_end,
             razorpay_subscription_id=subscription.razorpay_subscription_id,
             created_at=subscription.created_at,
@@ -161,7 +183,17 @@ async def update_subscription_seats(
         return SubscriptionResponse(
             id=str(subscription.id),
             company_id=subscription.company_id,
-            plan=SubscriptionPlanResponse.model_validate(subscription.plan),
+            plan=SubscriptionPlanResponse(
+                id=str(subscription.plan.id),
+                name=subscription.plan.name,
+                plan_key=subscription.plan.plan_key,
+                price_per_user_monthly=subscription.plan.price_per_user_monthly,
+                price_per_user_yearly=subscription.plan.price_per_user_yearly,
+                minimum_seats=subscription.plan.minimum_seats,
+                ai_queries_limit=subscription.plan.ai_queries_limit,
+                features=subscription.plan.features,
+                is_active=subscription.plan.is_active
+            ),
             billing_cycle=subscription.billing_cycle,
             seat_count=subscription.seat_count,
             billable_seats=subscription.billable_seats,
@@ -170,7 +202,6 @@ async def update_subscription_seats(
             status=subscription.status,
             current_period_start=subscription.current_period_start,
             current_period_end=subscription.current_period_end,
-            trial_end=subscription.trial_end,
             cancel_at_period_end=subscription.cancel_at_period_end,
             razorpay_subscription_id=subscription.razorpay_subscription_id,
             created_at=subscription.created_at,

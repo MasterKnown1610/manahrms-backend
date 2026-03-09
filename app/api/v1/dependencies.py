@@ -126,21 +126,6 @@ def get_current_authenticated_user(
                     }
                 )
         
-        # Check if trial has ended without activation
-        if subscription.status == SubscriptionStatus.TRIAL and subscription.trial_end:
-            if subscription.trial_end.replace(tzinfo=None) < now:
-                # Trial expired, update status
-                subscription.status = SubscriptionStatus.EXPIRED
-                db.commit()
-                
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail={
-                        "success": False,
-                        "message": "Your trial period has expired. Please subscribe to continue using the service.",
-                        "error_code": "SUBSCRIPTION_EXPIRED"
-                    }
-                )
     
     return user
 

@@ -76,7 +76,7 @@ class CompanySubscription(Base):
     price_per_user = Column(Numeric(10, 2), nullable=False)  # Price per user based on billing cycle
     razorpay_subscription_id = Column(String(255), nullable=True, unique=True, index=True)  # Razorpay subscription ID
     razorpay_customer_id = Column(String(255), nullable=True, index=True)  # Razorpay customer ID
-    status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.TRIAL, nullable=False, index=True)
+    status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE, nullable=False, index=True)
     current_period_start = Column(DateTime(timezone=True), nullable=True)
     current_period_end = Column(DateTime(timezone=True), nullable=True)
     trial_end = Column(DateTime(timezone=True), nullable=True)  # Trial end date

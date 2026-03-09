@@ -75,7 +75,6 @@ class SubscriptionService:
             and_(
                 CompanySubscription.company_id == company_id,
                 CompanySubscription.status.in_([
-                    SubscriptionStatus.TRIAL,
                     SubscriptionStatus.ACTIVE,
                     SubscriptionStatus.PAST_DUE
                 ])
@@ -139,10 +138,10 @@ class SubscriptionService:
             billable_seats=billable_seats,
             price_per_user=price_per_user,
             razorpay_customer_id=razorpay_customer_id,
-            status=SubscriptionStatus.TRIAL,  # Start with trial
+            status=SubscriptionStatus.ACTIVE,  # Start as active (no trial)
             current_period_start=now,
             current_period_end=period_end,
-            trial_end=now + timedelta(days=14)  # 14-day trial
+            trial_end=None  # No trial period
         )
         
         db.add(subscription)
@@ -343,9 +342,7 @@ class SubscriptionService:
                 "ai_limit": 0,
                 "ai_remaining": 0,
                 "next_billing_date": None,
-                "status": None,
-                "is_trial": False,
-                "trial_end": None
+                "status": None
             }
         
         # Get usage
@@ -387,9 +384,7 @@ class SubscriptionService:
             "ai_limit": ai_limit,
             "ai_remaining": ai_remaining,
             "next_billing_date": subscription.current_period_end,
-            "status": subscription.status,
-            "is_trial": subscription.status == SubscriptionStatus.TRIAL,
-            "trial_end": subscription.trial_end
+            "status": subscription.status
         }
     
     @staticmethod

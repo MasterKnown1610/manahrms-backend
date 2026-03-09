@@ -58,7 +58,6 @@ class SubscriptionResponse(BaseModel):
     status: SubscriptionStatus
     current_period_start: Optional[datetime] = None
     current_period_end: Optional[datetime] = None
-    trial_end: Optional[datetime] = None
     cancel_at_period_end: bool
     razorpay_subscription_id: Optional[str] = None
     created_at: datetime
@@ -108,8 +107,6 @@ class CurrentSubscriptionResponse(BaseModel):
     ai_remaining: int
     next_billing_date: Optional[datetime] = None
     status: SubscriptionStatus
-    is_trial: bool
-    trial_end: Optional[datetime] = None
 
 
 class RazorpayOrderResponse(BaseModel):

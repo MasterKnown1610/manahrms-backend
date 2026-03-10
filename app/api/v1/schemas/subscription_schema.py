@@ -95,18 +95,18 @@ class AIUsageResponse(BaseModel):
 
 class CurrentSubscriptionResponse(BaseModel):
     """Schema for current subscription dashboard"""
-    plan: str
-    plan_key: str
+    plan: Optional[str] = None
+    plan_key: Optional[str] = None
     employees_used: int
     billable_seats: int
     price_per_user: Decimal
     monthly_cost: Decimal
-    billing_cycle: BillingCycle
+    billing_cycle: Optional[BillingCycle] = None
     ai_usage: int
     ai_limit: int
     ai_remaining: int
     next_billing_date: Optional[datetime] = None
-    status: SubscriptionStatus
+    status: Optional[SubscriptionStatus] = None
 
 
 class RazorpayOrderResponse(BaseModel):

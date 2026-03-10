@@ -145,15 +145,28 @@ class SubscriptionService:
         )
         
         db.add(subscription)
-        db.flush()
+        db.flush()  # ensure subscription.id is available
         
-        # Create subscription usage record
-        usage = SubscriptionUsage(
-            company_id=company_id,
-            employees_used=0,
-            billable_seats=billable_seats
-        )
-        db.add(usage)
+        # Create or update subscription usage record for this company
+        usage = db.query(SubscriptionUsage).filter(
+            SubscriptionUsage.company_id == company_id
+        ).first()
+
+        if not usage:
+            # No usage record yet → create one and link to subscription
+            usage = SubscriptionUsage(
+                company_id=company_id,
+                subscription_id=subscription.id,
+                employees_used=0,
+                billable_seats=billable_seats,
+            )
+            db.add(usage)
+        else:
+            # Usage record exists (from previous subscription) → relink and reset
+            usage.subscription_id = subscription.id
+            usage.billable_seats = billable_seats
+            usage.employees_used = 0
+            usage.updated_at = datetime.utcnow()
         
         # Create or update initial AI usage record for current month
         now_dt = datetime.now()

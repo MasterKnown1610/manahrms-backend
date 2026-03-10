@@ -155,17 +155,30 @@ class SubscriptionService:
         )
         db.add(usage)
         
-        # Create initial AI usage record for current month
+        # Create or update initial AI usage record for current month
         now_dt = datetime.now()
-        ai_usage = CompanyAIUsage(
-            company_id=company_id,
-            year=now_dt.year,
-            month=now_dt.month,
-            queries_used=0,
-            queries_limit=plan.ai_queries_limit,
-            extra_queries_purchased=0
-        )
-        db.add(ai_usage)
+        ai_usage = db.query(CompanyAIUsage).filter(
+            and_(
+                CompanyAIUsage.company_id == company_id,
+                CompanyAIUsage.year == now_dt.year,
+                CompanyAIUsage.month == now_dt.month,
+            )
+        ).first()
+
+        if not ai_usage:
+            # No record yet for this month → create one
+            ai_usage = CompanyAIUsage(
+                company_id=company_id,
+                year=now_dt.year,
+                month=now_dt.month,
+                queries_used=0,
+                queries_limit=plan.ai_queries_limit,
+                extra_queries_purchased=0,
+            )
+            db.add(ai_usage)
+        else:
+            # Record already exists → just ensure the limit matches the plan
+            ai_usage.queries_limit = plan.ai_queries_limit
         
         db.commit()
         db.refresh(subscription)

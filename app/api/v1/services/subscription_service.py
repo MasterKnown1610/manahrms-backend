@@ -4,7 +4,7 @@ Handles subscription creation, updates, billing calculations, and seat managemen
 """
 from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, func, is_
+from sqlalchemy import and_, func
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from decimal import Decimal

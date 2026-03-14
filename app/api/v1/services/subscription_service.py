@@ -4,7 +4,7 @@ Handles subscription creation, updates, billing calculations, and seat managemen
 """
 from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, is_
 from fastapi import HTTPException, status
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -290,11 +290,12 @@ class SubscriptionService:
     @staticmethod
     def sync_employee_count(db: Session, company_id: int) -> SubscriptionUsage:
         """Sync employee count with subscription usage"""
-        # Count active employees
+        # Count active employees (is_active=True and not soft-deleted)
         employee_count = db.query(func.count(Employee.id)).filter(
             and_(
                 Employee.company_id == company_id,
-                Employee.status == "active"  # Assuming status field exists
+                Employee.is_active == True,
+                Employee.deleted_at.is_(None)  # Not soft-deleted
             )
         ).scalar() or 0
         

@@ -111,3 +111,4 @@ def init_subscription_plans():
 if __name__ == "__main__":
     init_subscription_plans()
 
+

@@ -6,6 +6,7 @@ import enum
 from app.db.base import Base
 
 
+
 class TaskStatus(str, enum.Enum):
     OPEN = "open"
     IN_PROGRESS = "in_progress"
@@ -36,6 +37,9 @@ class Task(Base):
     created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True)
 
+    # Primary branch for the task (e.g. feature/task-42)
+    branch = Column(String(255), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -44,6 +48,8 @@ class Task(Base):
     assigned_to_employee = relationship("Employee")
     created_by_user = relationship("User")
     project = relationship("Project", back_populates="tasks")
+    comments = relationship("TaskComment", back_populates="task", cascade="all, delete-orphan", order_by="TaskComment.created_at")
+    commits = relationship("TaskCommit", back_populates="task", cascade="all, delete-orphan", order_by="TaskCommit.created_at")
 
     def __repr__(self):
         return f"<Task {self.id} {self.title} ({self.status})>"

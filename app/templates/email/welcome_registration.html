@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Welcome to ManaHRMS</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1a1d21;line-height:1.6;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f4f6f9;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 24px rgba(74,26,115,0.12);">
+          <tr>
+            <td style="background:linear-gradient(135deg,{{ primary_dark }} 0%,{{ primary_light }} 55%,#8B4DC4 100%);padding:28px 32px;text-align:center;">
+              {% if logo_cid %}
+              <img src="cid:{{ logo_cid }}" alt="ManaHRMS AI" width="80" height="80" style="display:block;margin:0 auto 14px;border:0;outline:none;text-decoration:none;border-radius:12px;background:rgba(255,255,255,0.15);">
+              {% endif %}
+              <h1 style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">ManaHRMS AI</h1>
+              <p style="margin:8px 0 0;font-size:14px;color:rgba(255,255,255,0.92);">HR that scales with your ambition</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:36px 32px 24px;">
+              <p style="margin:0 0 16px;font-size:16px;">Hi <strong>{{ admin_name }}</strong>,</p>
+              <p style="margin:0 0 16px;font-size:17px;font-weight:600;color:{{ primary_light }};">Congratulations — your company workspace is ready.</p>
+              <p style="margin:0 0 16px;font-size:15px;color:#374151;">
+                Thank you for choosing <strong>ManaHRMS</strong>. You can start organizing your team, attendance, leave, and day-to-day HR in one place — and grow faster with <strong>ManaHRMS AI</strong> to help you work smarter, not harder.
+              </p>
+              <table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0;width:100%;background:#f5f0fc;border-radius:8px;border:1px solid #e4d4f4;">
+                <tr>
+                  <td style="padding:20px 22px;">
+                    <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:{{ primary_dark }};text-transform:uppercase;letter-spacing:0.06em;">Your company</p>
+                    <p style="margin:0;font-size:14px;color:#334155;"><strong>Company name:</strong> {{ company_name }}</p>
+                    <p style="margin:8px 0 0;font-size:14px;color:#334155;"><strong>Company code:</strong> {{ company_code }}</p>
+                    <p style="margin:8px 0 0;font-size:14px;color:#334155;"><strong>Company email:</strong> {{ company_email }}</p>
+                  </td>
+                </tr>
+              </table>
+              <table role="presentation" cellspacing="0" cellpadding="0" style="margin:24px 0;width:100%;background:#faf8fc;border-radius:8px;border:1px solid #ede9fe;">
+                <tr>
+                  <td style="padding:20px 22px;">
+                    <p style="margin:0 0 12px;font-size:13px;font-weight:600;color:{{ primary_dark }};text-transform:uppercase;letter-spacing:0.06em;">Sign in to the app</p>
+                    <p style="margin:0 0 10px;font-size:14px;color:#334155;">Use the ManaHRMS login screen with <strong>either</strong> your username <strong>or</strong> your admin email, plus the password you created at registration.</p>
+                    <p style="margin:0;font-size:14px;color:#334155;"><strong>Username:</strong> {{ username }}</p>
+                    <p style="margin:8px 0 0;font-size:14px;color:#334155;"><strong>Admin email:</strong> {{ admin_email }}</p>
+                    <p style="margin:12px 0 0;font-size:13px;color:#64748b;">For your security, we never send your password by email. If you forget it, use password recovery in the app (if enabled) or contact support.</p>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 24px;font-size:15px;color:#374151;">
+                If you ever need help, reply to this email — we are here for you.
+              </p>
+              {% if login_url %}
+              <p style="margin:0 0 32px;text-align:center;">
+                <a href="{{ login_url }}" style="display:inline-block;padding:14px 28px;background:{{ primary_light }};color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;border-radius:8px;">Go to login</a>
+              </p>
+              {% endif %}
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 32px 32px;border-top:1px solid #e5e7eb;">
+              <p style="margin:0;font-size:13px;color:#6b7280;">
+                Best regards,<br>
+                <strong style="color:{{ primary_dark }};">The ManaHRMS Team</strong>
+              </p>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:20px 0 0;font-size:12px;color:#9ca3af;max-width:600px;">
+          You received this email because a ManaHRMS company account was created with this address.
+        </p>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

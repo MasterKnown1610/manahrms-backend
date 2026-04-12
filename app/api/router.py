@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1.routes import auth, employees, departments, tasks, projects, attendance, ai_chat, vector_sync, leaves, dashboard, chat, meetings, events, calendar, subscriptions, webhooks
+from app.api.v1.routes import auth, employees, departments, tasks, projects, attendance, ai_chat, vector_sync, leaves, dashboard, chat, meetings, events, calendar, subscriptions, webhooks, superadmin
 
 api_router = APIRouter()
 
@@ -21,5 +21,6 @@ api_router.include_router(events.router)
 api_router.include_router(calendar.router)
 api_router.include_router(subscriptions.router)
 api_router.include_router(webhooks.router)
+api_router.include_router(superadmin.router)
 
 

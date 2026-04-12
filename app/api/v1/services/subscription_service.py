@@ -200,6 +200,107 @@ class SubscriptionService:
         return subscription
     
     @staticmethod
+    def upgrade_subscription(
+        db: Session,
+        company_id: int,
+        plan_id: str,
+        billing_cycle: BillingCycle,
+        seat_count: int,
+    ) -> "CompanySubscription":
+        """
+        Upgrade or change the current subscription plan, billing cycle, and seat count.
+        Works on ACTIVE, PAST_DUE, CANCELLED, and EXPIRED subscriptions.
+        The new billing period starts immediately from today.
+        """
+        # Get new plan
+        plan = SubscriptionService.get_plan_by_id(db, plan_id)
+        if not plan:
+            raise_http_exception(
+                message="Subscription plan not found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                error_code="PLAN_NOT_FOUND",
+            )
+
+        # Find existing subscription (any status)
+        subscription = db.query(CompanySubscription).filter(
+            CompanySubscription.company_id == company_id
+        ).first()
+
+        if not subscription:
+            raise_http_exception(
+                message="No subscription found for this company. Use /create to start one.",
+                status_code=status.HTTP_404_NOT_FOUND,
+                error_code="SUBSCRIPTION_NOT_FOUND",
+            )
+
+        billable_seats = SubscriptionService.calculate_billable_seats(seat_count, plan.minimum_seats)
+        price_per_user = SubscriptionService.get_price_per_user(plan, billing_cycle)
+
+        now = datetime.utcnow()
+        period_end = now + timedelta(days=30) if billing_cycle == BillingCycle.MONTHLY else now + timedelta(days=365)
+
+        # Apply changes
+        subscription.plan_id = plan.id
+        subscription.billing_cycle = billing_cycle
+        subscription.seat_count = seat_count
+        subscription.billable_seats = billable_seats
+        subscription.price_per_user = price_per_user
+        subscription.status = SubscriptionStatus.ACTIVE
+        subscription.current_period_start = now
+        subscription.current_period_end = period_end
+        subscription.cancel_at_period_end = False
+        subscription.cancelled_at = None
+        subscription.updated_at = now
+
+        # Sync usage record
+        usage = db.query(SubscriptionUsage).filter(
+            SubscriptionUsage.company_id == company_id
+        ).first()
+        if usage:
+            usage.subscription_id = subscription.id
+            usage.billable_seats = billable_seats
+            usage.updated_at = now
+        else:
+            usage = SubscriptionUsage(
+                company_id=company_id,
+                subscription_id=subscription.id,
+                employees_used=0,
+                billable_seats=billable_seats,
+            )
+            db.add(usage)
+
+        # Update AI usage limit for current month to match new plan
+        now_dt = datetime.now()
+        ai_usage = db.query(CompanyAIUsage).filter(
+            and_(
+                CompanyAIUsage.company_id == company_id,
+                CompanyAIUsage.year == now_dt.year,
+                CompanyAIUsage.month == now_dt.month,
+            )
+        ).first()
+        if ai_usage:
+            ai_usage.queries_limit = plan.ai_queries_limit
+            ai_usage.updated_at = now
+        else:
+            ai_usage = CompanyAIUsage(
+                company_id=company_id,
+                year=now_dt.year,
+                month=now_dt.month,
+                queries_used=0,
+                queries_limit=plan.ai_queries_limit,
+                extra_queries_purchased=0,
+            )
+            db.add(ai_usage)
+
+        db.commit()
+        db.refresh(subscription)
+        logger.info(
+            "Subscription upgraded for company %s → plan=%s billing=%s seats=%s",
+            company_id, plan.plan_key, billing_cycle.value, billable_seats,
+        )
+        return subscription
+
+    @staticmethod
     def update_subscription_seats(
         db: Session,
         company_id: int,

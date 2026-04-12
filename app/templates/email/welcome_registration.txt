@@ -1,0 +1,30 @@
+Hi {{ admin_name }},
+
+Congratulations — your company workspace is ready.
+
+Thank you for choosing ManaHRMS. You can start organizing your team, attendance, leave, and HR in one place, and grow faster with ManaHRMS AI to help you work smarter.
+
+Your company
+------------
+Company name: {{ company_name }}
+Company code: {{ company_code }}
+Company email: {{ company_email }}
+
+Sign in to the app
+------------------
+Use the ManaHRMS login with EITHER your username OR your admin email, plus the password you created when you registered.
+
+Username:     {{ username }}
+Admin email:  {{ admin_email }}
+
+We never send your password by email for security. If you forget it, use password recovery in the app or contact support.
+
+{% if login_url %}
+Login page: {{ login_url }}
+{% endif %}
+
+Best regards,
+The ManaHRMS Team
+
+---
+You received this email because a ManaHRMS company account was created with this address.

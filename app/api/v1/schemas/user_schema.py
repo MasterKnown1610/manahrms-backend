@@ -73,3 +73,21 @@ class MessageResponse(BaseModel):
     message: str
 
 
+class ForgotPasswordRequest(BaseModel):
+    """Schema for forgot password request"""
+    email: EmailStr = Field(..., description="Company admin email address")
+
+
+class ResetPasswordRequest(BaseModel):
+    """Schema for resetting password using a token"""
+    token: str = Field(..., description="Password reset token received via email")
+    new_password: str = Field(..., min_length=6)
+    confirm_password: str = Field(..., min_length=6)
+
+    @validator('confirm_password')
+    def passwords_match(cls, v, values):
+        if 'new_password' in values and v != values['new_password']:
+            raise ValueError('Passwords do not match')
+        return v
+
+

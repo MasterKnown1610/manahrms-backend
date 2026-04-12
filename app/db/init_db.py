@@ -36,7 +36,8 @@ def initialize_database_on_startup():
             'subscription_usage',  # Subscription usage tracking
             'ai_usage',  # AI usage tracking
             'company_ai_usage',  # Monthly AI usage summary
-            'ai_addons'  # AI add-on purchases
+            'ai_addons',  # AI add-on purchases
+            'super_admins'  # Platform superadmin accounts
         ]
         
         # Check for missing tables
@@ -381,3 +382,15 @@ def initialize_database_on_startup():
             return True
         except Exception as fallback_error:
             return False
+    finally:
+        # Always seed the default superadmin account (idempotent)
+        try:
+            from app.db.init_superadmin import create_superadmin
+            from app.db.session import SessionLocal
+            db_session = SessionLocal()
+            try:
+                create_superadmin(db_session)
+            finally:
+                db_session.close()
+        except Exception as seed_error:
+            logger.warning(f"Superadmin seed skipped: {seed_error}")

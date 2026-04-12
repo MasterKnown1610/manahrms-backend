@@ -6,9 +6,9 @@ import logging
 
 from app.api.v1.models.user_model import User, UserRole
 from app.api.v1.models.company_model import Company, CompanyType
-from app.api.v1.schemas.user_schema import UserLogin, PasswordChange
+from app.api.v1.schemas.user_schema import UserLogin, PasswordChange, ForgotPasswordRequest, ResetPasswordRequest
 from app.api.v1.schemas.company_schema import CompanyRegister
-from app.core.security import hash_password_for_storage, verify_password_against_hash, create_jwt_access_token
+from app.core.security import hash_password_for_storage, verify_password_against_hash, create_jwt_access_token, decode_and_verify_jwt_token
 from app.core.config import settings
 from app.api.v1.utils.error_handler import raise_http_exception
 
@@ -33,7 +33,7 @@ def generate_unique_company_code(db: Session) -> str:
 class AuthService:
     
     @staticmethod
-    def register_company_with_admin_user(db: Session, company_data: CompanyRegister) -> tuple[Company, User]:
+    def register_company_with_admin_user(db: Session, company_data: CompanyRegister) -> tuple[Company, User, bool]:
         existing_company = db.query(Company).filter(
             Company.email == company_data.company_email
         ).first()
@@ -122,7 +122,32 @@ class AuthService:
             db.commit()
             db.refresh(new_company)
             db.refresh(admin_user)
-            
+
+            welcome_email_sent = False
+            try:
+                from app.api.v1.services.mail_service import MailService
+
+                welcome_email_sent = MailService.send_registration_welcome(
+                    to_email=company_data.admin_email,
+                    admin_name=company_data.admin_full_name,
+                    company_name=new_company.company_name,
+                    company_code=new_company.company_code or "",
+                    company_email=company_data.company_email,
+                    admin_email=company_data.admin_email,
+                    username=company_data.admin_username,
+                )
+                if not welcome_email_sent:
+                    logger.warning(
+                        "Welcome email was not sent to %s; see SMTP logs above.",
+                        company_data.admin_email,
+                    )
+            except Exception as email_exc:
+                logger.warning(
+                    "Welcome email error for %s: %s",
+                    company_data.admin_email,
+                    email_exc,
+                )
+
             # Sync company to vector database
             try:
                 from app.api.v1.services.vector_sync_service import VectorSyncService
@@ -134,8 +159,8 @@ class AuthService:
                 logger.error(f"Failed to sync company {new_company.id} to vector store: {str(e)}")
                 # Don't fail the main operation if vector sync fails
             
-            return new_company, admin_user
-            
+            return new_company, admin_user, welcome_email_sent
+
         except Exception as e:
             db.rollback()
             raise_http_exception(
@@ -245,7 +270,84 @@ class AuthService:
     @staticmethod
     def get_user_by_username(db: Session, username: str) -> User:
         return db.query(User).filter(User.username == username).first()
-    
+
     @staticmethod
     def get_user_by_id(db: Session, user_id: int) -> User:
         return db.query(User).filter(User.id == user_id).first()
+
+    # ------------------------------------------------------------------ #
+    #  Forgot / Reset password                                             #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def request_password_reset(db: Session, request: ForgotPasswordRequest) -> bool:
+        """
+        Look up the user by email, generate a short-lived JWT reset token,
+        and dispatch the reset email.  Always returns True so callers cannot
+        use the response to enumerate valid email addresses.
+        """
+        user = db.query(User).filter(User.email == request.email).first()
+
+        if not user or not user.is_active:
+            # Silently succeed — don't reveal whether the address exists.
+            logger.info("Password reset requested for unknown/inactive email: %s", request.email)
+            return True
+
+        reset_token = create_jwt_access_token(
+            data={
+                "sub": user.email,
+                "user_id": user.id,
+                "purpose": "password_reset",
+            },
+            expires_delta=timedelta(hours=1),
+        )
+
+        try:
+            from app.api.v1.services.mail_service import MailService
+            from app.core.config import settings
+
+            reset_url = (settings.APP_PUBLIC_URL or "").strip().rstrip("/")
+            reset_url = f"{reset_url}/reset-password?token={reset_token}" if reset_url else f"/reset-password?token={reset_token}"
+
+            sent = MailService.send_password_reset_email(
+                to_email=user.email,
+                full_name=user.full_name,
+                reset_url=reset_url,
+            )
+            if not sent:
+                logger.warning("Password reset email not sent to %s", user.email)
+        except Exception as exc:
+            logger.error("Error sending password reset email to %s: %s", user.email, exc)
+
+        return True
+
+    @staticmethod
+    def reset_password_with_token(db: Session, request: ResetPasswordRequest) -> None:
+        """
+        Validate the reset token and update the user's password.
+        Raises HTTP 400 for invalid/expired tokens.
+        """
+        payload = decode_and_verify_jwt_token(request.token)
+
+        if not payload or payload.get("purpose") != "password_reset":
+            raise_http_exception(
+                message="Invalid or expired password reset link",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error_code="INVALID_RESET_TOKEN",
+            )
+
+        user_id = payload.get("user_id")
+        user = db.query(User).filter(User.id == user_id).first()
+
+        if not user or not user.is_active:
+            raise_http_exception(
+                message="Invalid or expired password reset link",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                error_code="INVALID_RESET_TOKEN",
+            )
+
+        user.hashed_password = hash_password_for_storage(request.new_password)
+        user.force_password_change = False
+        db.commit()
+        db.refresh(user)
+        logger.info("Password reset successfully for user id=%s", user.id)

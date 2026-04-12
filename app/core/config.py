@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, computed_field
-from typing import Optional
+from pydantic import Field, computed_field, field_validator
+from typing import Optional, Any
 
 
 class Settings(BaseSettings):
@@ -64,7 +64,34 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_ID: Optional[str] = Field(default=None, description="Razorpay Key ID")
     RAZORPAY_KEY_SECRET: Optional[str] = Field(default=None, description="Razorpay Key Secret")
     RAZORPAY_WEBHOOK_SECRET: Optional[str] = Field(default=None, description="Razorpay Webhook Secret for signature verification")
-    
+
+    # SMTP (transactional email, e.g. Hostinger)
+    EMAIL_HOST: Optional[str] = Field(default=None, description="SMTP host (e.g. smtp.hostinger.com)")
+    EMAIL_PORT: int = Field(default=465, description="SMTP port (465 SSL, 587 TLS)")
+    EMAIL_USER: Optional[str] = Field(default=None, description="SMTP username (usually full email)")
+    EMAIL_PASS: Optional[str] = Field(default=None, description="SMTP password")
+    EMAIL_SECURE: str = Field(default="SSL", description="SSL (port 465), TLS (STARTTLS, often 587), or NONE")
+    EMAIL_FROM_NAME: str = Field(default="ManaHRMS", description="Display name for From header")
+    APP_PUBLIC_URL: Optional[str] = Field(
+        default=None,
+        description="Public app URL for email links (no trailing slash), e.g. https://app.manahrms.com",
+    )
+
+    @field_validator(
+        "EMAIL_HOST",
+        "EMAIL_USER",
+        "EMAIL_PASS",
+        "EMAIL_FROM_NAME",
+        "EMAIL_SECURE",
+        "APP_PUBLIC_URL",
+        mode="before",
+    )
+    @classmethod
+    def strip_email_env_strings(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_file=".env",

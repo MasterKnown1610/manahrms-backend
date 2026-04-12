@@ -5,6 +5,7 @@ Run this script to create default subscription plans
 from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.api.v1.models.subscription_model import SubscriptionPlan
+from app.api.v1.constants.product_modules import default_features_all_false
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,20 @@ def init_subscription_plans():
             logger.info(f"Subscription plans already exist ({existing_plans} plans found). Skipping initialization.")
             return
         
+        def _all_modules(enabled: bool) -> dict:
+            f = default_features_all_false()
+            if enabled:
+                for k in f:
+                    f[k] = True
+            return f
+
+        # Feature keys must match app/api/v1/constants/product_modules.py (implemented API modules only).
+        starter_features = _all_modules(True)
+        starter_features["chat"] = False  # differentiate tier; superadmin can change via PATCH /plans
+
+        growth_features = _all_modules(True)
+        scale_features = _all_modules(True)
+
         # Create plans
         plans = [
             {
@@ -30,19 +45,7 @@ def init_subscription_plans():
                 "price_per_user_yearly": 470.00,  # 20% discount: 49 * 12 * 0.8 = 470.4 ≈ 470
                 "minimum_seats": 1,
                 "ai_queries_limit": 300,
-                "features": {
-                    "employees": True,
-                    "departments": True,
-                    "tasks": True,
-                    "projects": True,
-                    "attendance": True,
-                    "leaves": True,
-                    "meetings": True,
-                    "events": True,
-                    "calendar": True,
-                    "ai_chat": True,
-                    "dashboard": True
-                }
+                "features": starter_features,
             },
             {
                 "name": "Growth",
@@ -51,20 +54,7 @@ def init_subscription_plans():
                 "price_per_user_yearly": 374.40,  # 20% discount: 39 * 12 * 0.8 = 374.4
                 "minimum_seats": 10,
                 "ai_queries_limit": 800,
-                "features": {
-                    "employees": True,
-                    "departments": True,
-                    "tasks": True,
-                    "projects": True,
-                    "attendance": True,
-                    "leaves": True,
-                    "meetings": True,
-                    "events": True,
-                    "calendar": True,
-                    "ai_chat": True,
-                    "dashboard": True,
-                    "advanced_analytics": True
-                }
+                "features": growth_features,
             },
             {
                 "name": "Scale",
@@ -73,24 +63,8 @@ def init_subscription_plans():
                 "price_per_user_yearly": 278.40,  # 20% discount: 29 * 12 * 0.8 = 278.4
                 "minimum_seats": 25,
                 "ai_queries_limit": 2000,
-                "features": {
-                    "employees": True,
-                    "departments": True,
-                    "tasks": True,
-                    "projects": True,
-                    "attendance": True,
-                    "leaves": True,
-                    "meetings": True,
-                    "events": True,
-                    "calendar": True,
-                    "ai_chat": True,
-                    "dashboard": True,
-                    "advanced_analytics": True,
-                    "custom_reports": True,
-                    "api_access": True,
-                    "priority_support": True
-                }
-            }
+                "features": scale_features,
+            },
         ]
         
         for plan_data in plans:
@@ -110,5 +84,7 @@ def init_subscription_plans():
 
 if __name__ == "__main__":
     init_subscription_plans()
+
+
 
 

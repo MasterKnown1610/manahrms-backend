@@ -88,6 +88,10 @@ class CompanyRegistrationResponse(BaseModel):
     company: CompanyResponse
     admin_username: str
     message: str = "Company registered successfully"
-    
+    welcome_email_sent: bool = Field(
+        default=False,
+        description="True if the welcome email was accepted by SMTP. If false, check server logs and .env SMTP settings.",
+    )
+
     model_config = {"from_attributes": True}
 

@@ -14,6 +14,9 @@ from app.api.v1.models.employee_model import Employee  # noqa
 from app.api.v1.models.user_model import User  # noqa
 from app.api.v1.models.project_model import Project  # noqa
 from app.api.v1.models.task_model import Task  # noqa
+from app.api.v1.models.task_permission_model import TaskPermission  # noqa
+from app.api.v1.models.task_comment_model import TaskComment  # noqa
+from app.api.v1.models.task_commit_model import TaskCommit  # noqa
 from app.api.v1.models.attendance_model import Attendance  # noqa
 from app.api.v1.models.employee_attachment_model import EmployeeAttachment  # noqa
 from app.api.v1.models.vector_store_model import VectorStore  # noqa
@@ -25,3 +28,4 @@ from app.api.v1.models.subscription_model import (
     SubscriptionPlan, CompanySubscription, SubscriptionUsage,
     AIUsage, CompanyAIUsage, AIAddon, BillingCycle, SubscriptionStatus, AIAddonType
 )  # noqa
+from app.api.v1.models.superadmin_model import SuperAdmin  # noqa

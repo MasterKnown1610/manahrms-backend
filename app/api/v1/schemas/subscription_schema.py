@@ -23,6 +23,13 @@ class SubscriptionUpdateSeatsRequest(BaseModel):
     seat_count: int = Field(..., ge=1, description="New number of seats")
 
 
+class SubscriptionUpgradeRequest(BaseModel):
+    """Schema for upgrading / changing the current subscription plan"""
+    plan_id: str = Field(..., description="New subscription plan ID (UUID)")
+    billing_cycle: BillingCycle = Field(..., description="Monthly or yearly billing")
+    seat_count: int = Field(..., ge=1, description="Number of seats requested")
+
+
 class AIAddonPurchaseRequest(BaseModel):
     """Schema for purchasing AI add-on"""
     addon_type: AIAddonType = Field(..., description="Type of AI add-on to purchase")

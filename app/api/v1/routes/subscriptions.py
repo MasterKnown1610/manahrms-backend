@@ -11,6 +11,7 @@ from app.api.v1.schemas.subscription_schema import (
     SubscriptionPlanResponse,
     SubscriptionCreateRequest,
     SubscriptionUpdateSeatsRequest,
+    SubscriptionUpgradeRequest,
     SubscriptionResponse,
     CurrentSubscriptionResponse,
     AIAddonPurchaseRequest,
@@ -144,6 +145,78 @@ async def create_subscription(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create subscription: {str(e)}"
+        )
+
+
+@router.patch("/upgrade", response_model=SubscriptionResponse)
+async def upgrade_subscription(
+    request: Request,
+    upgrade_data: SubscriptionUpgradeRequest,
+    current_user: User = Depends(get_current_authenticated_user_allow_expired),
+    db: Session = Depends(get_database_session)
+):
+    """
+    Upgrade or change the current subscription plan, billing cycle, or seat count.
+    Use this to switch from Starter → Growth → Scale (or downgrade).
+    The new billing period starts immediately from today.
+    Only admins can upgrade subscriptions.
+    """
+    if current_user.role.value != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can upgrade subscriptions"
+        )
+
+    try:
+        subscription = SubscriptionService.upgrade_subscription(
+            db=db,
+            company_id=current_user.company_id,
+            plan_id=upgrade_data.plan_id,
+            billing_cycle=upgrade_data.billing_cycle,
+            seat_count=upgrade_data.seat_count,
+        )
+
+        db.refresh(subscription)
+        monthly_cost = SubscriptionService.calculate_monthly_cost(
+            subscription.billable_seats,
+            subscription.price_per_user
+        )
+
+        return SubscriptionResponse(
+            id=str(subscription.id),
+            company_id=subscription.company_id,
+            plan=SubscriptionPlanResponse(
+                id=str(subscription.plan.id),
+                name=subscription.plan.name,
+                plan_key=subscription.plan.plan_key,
+                price_per_user_monthly=subscription.plan.price_per_user_monthly,
+                price_per_user_yearly=subscription.plan.price_per_user_yearly,
+                minimum_seats=subscription.plan.minimum_seats,
+                ai_queries_limit=subscription.plan.ai_queries_limit,
+                features=subscription.plan.features,
+                is_active=subscription.plan.is_active
+            ),
+            billing_cycle=subscription.billing_cycle,
+            seat_count=subscription.seat_count,
+            billable_seats=subscription.billable_seats,
+            price_per_user=subscription.price_per_user,
+            monthly_cost=monthly_cost,
+            status=subscription.status,
+            current_period_start=subscription.current_period_start,
+            current_period_end=subscription.current_period_end,
+            cancel_at_period_end=subscription.cancel_at_period_end,
+            razorpay_subscription_id=subscription.razorpay_subscription_id,
+            created_at=subscription.created_at,
+            updated_at=subscription.updated_at
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error upgrading subscription: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upgrade subscription: {str(e)}"
         )
 
 

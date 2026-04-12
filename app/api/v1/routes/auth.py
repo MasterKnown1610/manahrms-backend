@@ -9,7 +9,9 @@ from app.api.v1.schemas.user_schema import (
     UserResponse,
     TokenResponse,
     MessageResponse,
-    PasswordChange
+    PasswordChange,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
 )
 from app.api.v1.schemas.company_schema import (
     CompanyRegister,
@@ -28,12 +30,15 @@ async def register_new_company_with_admin(
     company_data: CompanyRegister,
     db: Session = Depends(get_database_session)
 ):
-    company, admin_user = AuthService.register_company_with_admin_user(db, company_data)
-    
+    company, admin_user, welcome_email_sent = AuthService.register_company_with_admin_user(
+        db, company_data
+    )
+
     return CompanyRegistrationResponse(
         company=company,
         admin_username=admin_user.username,
-        message="Company registered successfully! Admin can now login."
+        message="Company registered successfully! Admin can now login.",
+        welcome_email_sent=welcome_email_sent,
     )
 
 
@@ -127,7 +132,38 @@ async def change_current_user_password(
     db: Session = Depends(get_database_session)
 ):
     AuthService.change_user_password(db, current_user, password_data)
-    
+
     return MessageResponse(
         message="Password changed successfully"
+    )
+
+
+@router.post("/forgot-password", response_model=MessageResponse)
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    db: Session = Depends(get_database_session)
+):
+    """
+    Send a password reset link to the provided email address.
+    Always returns a success message to prevent email enumeration.
+    The reset link is valid for 1 hour.
+    """
+    AuthService.request_password_reset(db, request)
+    return MessageResponse(
+        message="If an account with that email exists, a password reset link has been sent."
+    )
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+async def reset_password(
+    request: ResetPasswordRequest,
+    db: Session = Depends(get_database_session)
+):
+    """
+    Reset the user's password using the token received via email.
+    The token must be valid and not expired (1-hour window).
+    """
+    AuthService.reset_password_with_token(db, request)
+    return MessageResponse(
+        message="Password has been reset successfully. You can now log in with your new password."
     )

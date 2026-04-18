@@ -26,11 +26,8 @@ logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 5  # prevent infinite loops
 
-# Every tool: arguments and natural-language replies must not use invented personas or sample data.
-_TOOL_USE_REAL_DATA_ONLY = (
-    " Use only values the user explicitly provided in this chat or data returned by tools in this thread — "
-    "never placeholder, random, or example names, titles, emails, dates, links, or IDs."
-)
+# Kept empty — the no-fabrication rule lives in the system prompt once, not repeated per tool.
+_TOOL_USE_REAL_DATA_ONLY = ""
 
 
 # ─── Tool Definitions ─────────────────────────────────────────────────────────
@@ -40,29 +37,20 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_employee",
-            "description": (
-                "Create a new employee in the company (generates employee code). "
-                "Call this ONLY after the user has explicitly confirmed (e.g. yes, ok, confirm, proceed) "
-                "following your summary of the employee to be created. Do not call on the first vague request. "
-                "Every argument must match what the user typed — never use fictional or sample names."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "Create a new employee (generates employee code). Confirm before calling.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "first_name": {"type": "string", "description": "Employee's first name"},
-                    "last_name": {
-                        "type": "string",
-                        "description": "Employee's last name. If the user gave only one name, use the same value as first_name until they correct it.",
-                    },
-                    "email": {"type": "string", "description": "Employee's email address"},
-                    "phone": {"type": "string", "description": "Employee's phone number (optional)"},
-                    "position": {"type": "string", "description": "Job title / position (optional)"},
-                    "department_id": {"type": "integer", "description": "Department ID (optional)"},
-                    "hire_date": {"type": "string", "description": "Hire date in YYYY-MM-DD format"},
-                    "initial_password": {"type": "string", "description": "Initial login password (min 6 chars)"},
-                    "salary": {"type": "number", "description": "Monthly salary (optional)"},
-                    "address": {"type": "string", "description": "Employee address (optional)"},
+                    "first_name": {"type": "string"},
+                    "last_name": {"type": "string", "description": "Optional; defaults to first_name if omitted"},
+                    "email": {"type": "string"},
+                    "phone": {"type": "string"},
+                    "position": {"type": "string"},
+                    "department_id": {"type": "integer"},
+                    "hire_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "initial_password": {"type": "string", "description": "Min 6 chars"},
+                    "salary": {"type": "number"},
+                    "address": {"type": "string"},
                 },
                 "required": ["first_name", "email", "hire_date", "initial_password"],
             },
@@ -72,23 +60,13 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_employees",
-            "description": (
-                "List all employees in the company with optional filters."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " For search, use the user's term only."
-            ),
+            "description": "List employees with optional filters.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "search": {
-                        "type": "string",
-                        "description": "Search string exactly as the user gave it for name, email, or employee code",
-                    },
-                    "department_id": {
-                        "type": "integer",
-                        "description": "Department ID only if user stated it or from list_departments",
-                    },
-                    "is_active": {"type": "boolean", "description": "Filter by active status (default: true)"},
+                    "search": {"type": "string", "description": "Search by name, email, or employee code"},
+                    "department_id": {"type": "integer"},
+                    "is_active": {"type": "boolean"},
                 },
                 "required": [],
             },
@@ -98,18 +76,11 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_employee_by_name",
-            "description": (
-                "Find an employee by their name or email."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " The search string must be exactly what the user said to look up."
-            ),
+            "description": "Find an employee by name or email.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {
-                        "type": "string",
-                        "description": "Full or partial name or email as given by the user — not a made-up example",
-                    },
+                    "name": {"type": "string", "description": "Name or email to search"},
                 },
                 "required": ["name"],
             },
@@ -119,36 +90,16 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_task",
-            "description": (
-                "Create a new task and optionally assign it to an employee. "
-                "Call ONLY after the user explicitly confirmed following your summary of the task."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "Create a task and optionally assign it. Confirm before calling.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string", "description": "Task title exactly as specified by the user"},
-                    "description": {
-                        "type": "string",
-                        "description": "Task description only if the user provided one",
-                    },
-                    "priority": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "description": "Task priority (default: medium)",
-                    },
-                    "due_date": {
-                        "type": "string",
-                        "description": "Due date YYYY-MM-DD only if user gave a date — do not invent",
-                    },
-                    "assigned_to_employee_id": {
-                        "type": "integer",
-                        "description": "Employee ID from list/get employee tools or user — optional",
-                    },
-                    "project_id": {
-                        "type": "integer",
-                        "description": "Project ID from list_projects or user — optional",
-                    },
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "priority": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "due_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "assigned_to_employee_id": {"type": "integer"},
+                    "project_id": {"type": "integer"},
                 },
                 "required": ["title"],
             },
@@ -158,28 +109,13 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_tasks",
-            "description": (
-                "List tasks in the company with optional filters."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Use filters only if the user asked for them or values come from prior tools."
-            ),
+            "description": "List company tasks with optional filters.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "status": {
-                        "type": "string",
-                        "enum": ["open", "in_progress", "closed"],
-                        "description": "Filter by task status if the user requested this status",
-                    },
-                    "assigned_to_employee_id": {
-                        "type": "integer",
-                        "description": "Employee ID from user or get_employee_by_name/list_employees — never invented",
-                    },
-                    "priority": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "description": "Filter by priority",
-                    },
+                    "status": {"type": "string", "enum": ["open", "in_progress", "closed"]},
+                    "assigned_to_employee_id": {"type": "integer"},
+                    "priority": {"type": "string", "enum": ["low", "medium", "high"]},
                 },
                 "required": [],
             },
@@ -189,38 +125,17 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_task",
-            "description": (
-                "Update a task's status, priority, due date, or other fields. "
-                "Call ONLY after the user explicitly confirmed following your summary of the changes."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "Update a task's fields. Confirm before calling.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "task_id": {
-                        "type": "integer",
-                        "description": "Task ID from list_tasks or user — never guessed",
-                    },
-                    "status": {
-                        "type": "string",
-                        "enum": ["open", "in_progress", "closed"],
-                        "description": "New status only if user requested this change",
-                    },
-                    "priority": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "description": "New priority only if user requested",
-                    },
-                    "due_date": {
-                        "type": "string",
-                        "description": "New due date YYYY-MM-DD only if user gave one",
-                    },
-                    "title": {"type": "string", "description": "New title only if user provided"},
-                    "description": {"type": "string", "description": "New description only if user provided"},
-                    "assigned_to_employee_id": {
-                        "type": "integer",
-                        "description": "Employee ID from list/get tools or user when reassigning",
-                    },
+                    "task_id": {"type": "integer"},
+                    "status": {"type": "string", "enum": ["open", "in_progress", "closed"]},
+                    "priority": {"type": "string", "enum": ["low", "medium", "high"]},
+                    "due_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "assigned_to_employee_id": {"type": "integer"},
                 },
                 "required": ["task_id"],
             },
@@ -230,45 +145,18 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "schedule_meeting",
-            "description": (
-                "Schedule a meeting with participants. "
-                "Call ONLY after the user explicitly confirmed following your summary (time, link, participants)."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "Schedule a meeting with participants. Confirm before calling.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "title": {"type": "string", "description": "Meeting title from the user — not a placeholder"},
-                    "description": {
-                        "type": "string",
-                        "description": "Meeting description only if the user provided one",
-                    },
-                    "start_time": {
-                        "type": "string",
-                        "description": "Start ISO datetime from user (e.g. 2025-04-15T10:00:00) — never invented",
-                    },
-                    "end_time": {
-                        "type": "string",
-                        "description": "End ISO datetime from user — never invented",
-                    },
-                    "timezone": {
-                        "type": "string",
-                        "description": "IANA zone from user or Asia/Kolkata if user said IST/India",
-                    },
-                    "meeting_link": {
-                        "type": "string",
-                        "description": "Meeting URL exactly as the user provided",
-                    },
-                    "meeting_platform": {
-                        "type": "string",
-                        "enum": ["GOOGLE_MEET", "ZOOM", "MS_TEAMS", "OTHER"],
-                        "description": "Meeting platform",
-                    },
-                    "participant_user_ids": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                        "description": "User IDs from list_employees/get_employee or explicit IDs from user — never random",
-                    },
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "start_time": {"type": "string", "description": "ISO datetime e.g. 2025-04-15T10:00:00"},
+                    "end_time": {"type": "string", "description": "ISO datetime"},
+                    "timezone": {"type": "string", "description": "IANA zone; use Asia/Kolkata for IST"},
+                    "meeting_link": {"type": "string"},
+                    "meeting_platform": {"type": "string", "enum": ["GOOGLE_MEET", "ZOOM", "MS_TEAMS", "OTHER"]},
+                    "participant_user_ids": {"type": "array", "items": {"type": "integer"}},
                 },
                 "required": ["title", "start_time", "end_time", "meeting_link", "meeting_platform"],
             },
@@ -278,15 +166,11 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_upcoming_meetings",
-            "description": (
-                "List upcoming meetings scheduled for the company."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Summarize only meetings returned — do not invent meetings."
-            ),
+            "description": "List upcoming company meetings.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "limit": {"type": "integer", "description": "Max number of meetings to return (default: 10)"},
+                    "limit": {"type": "integer", "description": "Max results (default 10)"},
                 },
                 "required": [],
             },
@@ -296,11 +180,7 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_departments",
-            "description": (
-                "List all departments in the company."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Report only departments returned."
-            ),
+            "description": "List all active departments.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -308,19 +188,12 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_department",
-            "description": (
-                "Create a new department in the company. "
-                "Call ONLY after the user explicitly confirmed following your summary."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "Create a new department. Confirm before calling.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "name": {"type": "string", "description": "Department name as given by the user"},
-                    "description": {
-                        "type": "string",
-                        "description": "Department description only if the user provided one",
-                    },
+                    "name": {"type": "string"},
+                    "description": {"type": "string"},
                 },
                 "required": ["name"],
             },
@@ -330,22 +203,12 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_attendance_report",
-            "description": (
-                "Get attendance records for a specific date or employee."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Use employee_id only from tool results or an ID the user stated."
-            ),
+            "description": "Get attendance records for a date or employee.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "attendance_date": {
-                        "type": "string",
-                        "description": "Date YYYY-MM-DD from user or today — do not invent a date",
-                    },
-                    "employee_id": {
-                        "type": "integer",
-                        "description": "Filter by employee ID only if user gave it or it came from another tool",
-                    },
+                    "attendance_date": {"type": "string", "description": "YYYY-MM-DD (default: today)"},
+                    "employee_id": {"type": "integer"},
                 },
                 "required": [],
             },
@@ -355,11 +218,7 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_pending_leave_requests",
-            "description": (
-                "List all pending leave requests awaiting admin approval."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Report only requests returned."
-            ),
+            "description": "List all pending leave requests awaiting admin approval.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -367,28 +226,13 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "approve_reject_leave",
-            "description": (
-                "Approve or reject an employee's leave request. "
-                "Call ONLY after the user explicitly confirmed the leave_request_id and approve vs reject."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " leave_request_id must come from list_pending_leave_requests or explicit user input."
-            ),
+            "description": "Approve or reject a leave request. Confirm before calling. Use ID from list_pending_leave_requests.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "leave_request_id": {
-                        "type": "integer",
-                        "description": "ID from list_pending_leave_requests or user — never invented",
-                    },
-                    "action": {
-                        "type": "string",
-                        "enum": ["approve", "reject"],
-                        "description": "approve or reject exactly as the user decided after confirmation",
-                    },
-                    "rejection_reason": {
-                        "type": "string",
-                        "description": "Reason for rejection only in the user's words when rejecting",
-                    },
+                    "leave_request_id": {"type": "integer"},
+                    "action": {"type": "string", "enum": ["approve", "reject"]},
+                    "rejection_reason": {"type": "string"},
                 },
                 "required": ["leave_request_id", "action"],
             },
@@ -398,10 +242,7 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_leave_types",
-            "description": (
-                "List all available leave types in the company (real configured types and IDs)."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "List all configured leave types with IDs.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -409,11 +250,7 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_projects",
-            "description": (
-                "List all active projects in the company."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Report only projects returned."
-            ),
+            "description": "List all active projects.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -421,11 +258,7 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_dashboard_summary",
-            "description": (
-                "Get a quick summary of key company metrics: employee count, tasks, attendance today."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Quote only numbers/fields from this tool."
-            ),
+            "description": "Get key company metrics: employee count, tasks, attendance today.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -436,11 +269,7 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "punch_in",
-            "description": (
-                "Mark attendance punch-in (check-in) for today. "
-                "Call ONLY after the user explicitly confirmed they want to punch in."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "Mark attendance punch-in for today. Confirm before calling.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -448,11 +277,7 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "punch_out",
-            "description": (
-                "Mark attendance punch-out (check-out) for today. "
-                "Call ONLY after the user explicitly confirmed they want to punch out."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "Mark attendance punch-out for today. Confirm before calling.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -460,19 +285,11 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_my_tasks",
-            "description": (
-                "Get tasks assigned to me with optional status filter."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Summarize only tasks this tool returns."
-            ),
+            "description": "Get tasks assigned to me.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "status": {
-                        "type": "string",
-                        "enum": ["open", "in_progress", "closed"],
-                        "description": "Filter only if the user asked for this status",
-                    },
+                    "status": {"type": "string", "enum": ["open", "in_progress", "closed"]},
                 },
                 "required": [],
             },
@@ -482,22 +299,12 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_my_attendance",
-            "description": (
-                "Get my attendance records for a date range."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Use date range from user or sensible defaults — do not invent dates the user did not imply."
-            ),
+            "description": "Get my attendance records for a date range.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "start_date": {
-                        "type": "string",
-                        "description": "Start YYYY-MM-DD from user or first of month if user asked for 'this month'",
-                    },
-                    "end_date": {
-                        "type": "string",
-                        "description": "End YYYY-MM-DD from user or today if user implied current period",
-                    },
+                    "start_date": {"type": "string", "description": "YYYY-MM-DD (default: first of month)"},
+                    "end_date": {"type": "string", "description": "YYYY-MM-DD (default: today)"},
                 },
                 "required": [],
             },
@@ -507,28 +314,14 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "apply_for_leave",
-            "description": (
-                "Apply for a leave request. "
-                "Call ONLY after the user explicitly confirmed following your summary (dates, leave type, reason if any)."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " leave_type_id must come from list_leave_types in this thread or explicit user input."
-            ),
+            "description": "Apply for leave. Confirm before calling. Get leave_type_id from list_leave_types.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "leave_type_id": {
-                        "type": "integer",
-                        "description": "Leave type ID from list_leave_types in this thread or user-stated ID",
-                    },
-                    "start_date": {
-                        "type": "string",
-                        "description": "Leave start YYYY-MM-DD from user — not invented",
-                    },
-                    "end_date": {
-                        "type": "string",
-                        "description": "Leave end YYYY-MM-DD from user — not invented",
-                    },
-                    "reason": {"type": "string", "description": "Reason only if the user gave one"},
+                    "leave_type_id": {"type": "integer"},
+                    "start_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "end_date": {"type": "string", "description": "YYYY-MM-DD"},
+                    "reason": {"type": "string"},
                 },
                 "required": ["leave_type_id", "start_date", "end_date"],
             },
@@ -538,11 +331,7 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_my_leave_balance",
-            "description": (
-                "Check my remaining leave balance for all leave types."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " Report only balances this tool returns."
-            ),
+            "description": "Check my remaining leave balance for all leave types.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -550,10 +339,7 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "list_leave_types",
-            "description": (
-                "List all available leave types with their IDs from the company configuration."
-                + _TOOL_USE_REAL_DATA_ONLY
-            ),
+            "description": "List all configured leave types with IDs.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -561,11 +347,7 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "get_my_profile",
-            "description": (
-                "Get my employee profile information."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " State only fields returned here."
-            ),
+            "description": "Get my employee profile information.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -573,24 +355,12 @@ EMPLOYEE_TOOLS = [
         "type": "function",
         "function": {
             "name": "update_my_task_status",
-            "description": (
-                "Update the status of a task assigned to me. "
-                "Call ONLY after the user explicitly confirmed which task and the new status."
-                + _TOOL_USE_REAL_DATA_ONLY
-                + " task_id must be from get_my_tasks or stated by the user."
-            ),
+            "description": "Update status of a task assigned to me. Confirm before calling. Use task_id from get_my_tasks.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "task_id": {
-                        "type": "integer",
-                        "description": "Task ID from get_my_tasks or user — never guessed",
-                    },
-                    "status": {
-                        "type": "string",
-                        "enum": ["in_progress", "closed"],
-                        "description": "New status exactly as the user asked",
-                    },
+                    "task_id": {"type": "integer"},
+                    "status": {"type": "string", "enum": ["in_progress", "closed"]},
                 },
                 "required": ["task_id", "status"],
             },
@@ -622,41 +392,22 @@ class AgenticAIService:
     def _system_prompt(self, user: User, role: UserRole) -> str:
         today = date.today().isoformat()
         role_desc = "company admin" if role == UserRole.ADMIN else "employee"
-        mutating_tools_note = ""
         if role == UserRole.ADMIN:
-            mutating_tools_note = (
-                "Mutating tools (require confirmation): create_employee, create_task, update_task, "
-                "schedule_meeting, create_department, approve_reject_leave."
-            )
+            confirm_tools = "create_employee, create_task, update_task, schedule_meeting, create_department, approve_reject_leave"
         else:
-            mutating_tools_note = (
-                "Mutating tools (require confirmation): punch_in, punch_out, apply_for_leave, "
-                "update_my_task_status."
-            )
-        mutating_workflow = f"""
-Workflow for ANY mutating action ({mutating_tools_note}):
-1) Read-only tools first when helpful (lists, lookups, reports — anything that does not create/update/approve/punch). You may call those without a confirmation step to resolve names to IDs or show options. For those tools, pass search/filter/ID arguments only from the user's words or from earlier tool results; when you describe the outcome, stick to what the tool returned — do not add fictional people, tasks, meetings, or departments.
-2) Before calling a mutating tool: ensure every **required** parameter for that tool is known from the conversation (or from a read-only tool you just called). If anything required is missing, reply WITHOUT calling any mutating tool — ask in a short numbered list for only what is still missing.
-3) When all required inputs are known, send a clear summary using **only** values the user actually provided (or IDs/names from a tool result) — never example or random names. Ask: "Reply **yes** to proceed, or **no** to cancel." Do NOT call the mutating tool in that same turn.
-4) Call the mutating tool only after the user clearly confirms (e.g. yes, yep, ok, okay, confirm, confirmed, proceed, go ahead, sure, do it). If they say no or cancel, acknowledge and do not perform the action.
-5) After a mutating tool succeeds, reply briefly with a friendly success confirmation (include key non-sensitive details the tool returned, e.g. employee code, task id, meeting time).
+            confirm_tools = "punch_in, punch_out, apply_for_leave, update_my_task_status"
+        return f"""You are an HRMS assistant for {user.full_name} ({role_desc}). Today: {today}.
 
-Security: Never put passwords in assistant messages — not temporary password, initial password, or any credential. For create_employee success, mention only name, employee code, email, and username; say the employee logs in with the password the admin already set (without repeating it).
-
-Create employee (admins): required fields are first name, email, hire date (YYYY-MM-DD), initial password (min 6 characters). Last name is optional; a single name may be first_name with last_name equal to first_name until corrected. The user must type or confirm the password in chat for you to pass to the tool — do not invent or auto-fill passwords.
-"""
-        return f"""You are an intelligent HRMS assistant for {user.full_name} ({role_desc}).
-Today's date is {today}.
-
-You can perform real actions inside the system using the tools provided.
-- After a tool succeeds, confirm the outcome in a friendly and concise way
-- If a tool fails, explain what went wrong clearly and suggest what to do next
-- Multi-turn: use the full conversation before calling tools; combine earlier turns with the latest message
-- Keep responses concise and professional
-
-Universal — no fabricated data (all tools, all roles, every reply): Never use placeholder, example, or made-up names (e.g. no "Alice Smith", "John Doe", "Jane Doe", "Test User") or fake emails, phone numbers, links, meeting titles, task titles, department names, reasons, or addresses. Every fact you state must come from (a) what the user explicitly typed in this conversation, or (b) a tool result in this thread. If something is missing, ask — do not guess, assume, or use samples. When explaining what you need, use generic wording (e.g. "the employee's email") not fictional examples. Do not paraphrase user names into different names.
-- Never invent emails, dates, passwords, or IDs — only use what the user or tools provided
-{mutating_workflow}"""
+RULES:
+1. Never fabricate names, emails, IDs, dates, links, or any data. Use only what the user typed or tool results returned. Ask for missing info — never invent.
+2. Mutating tools ({confirm_tools}) require confirmation:
+   a. Use read-only tools first to resolve names/IDs if needed (no confirmation needed for those).
+   b. If any required param is missing, ask for only what's missing — don't call the mutating tool.
+   c. Summarize the action with real values; ask "Reply yes to proceed or no to cancel."
+   d. Call the mutating tool ONLY after explicit confirmation (yes/ok/confirm/proceed).
+   e. On success, reply briefly with key details (never echo passwords).
+3. Security: Never repeat passwords. For create_employee success: report name, code, email only.
+4. Keep responses concise and professional."""
 
     # ─── Tool Executors ───────────────────────────────────────────────────────
 
@@ -755,7 +506,7 @@ Universal — no fabricated data (all tools, all roles, every reply): Never use 
         if dept_id:
             query = query.filter(Employee.department_id == dept_id)
 
-        employees = query.order_by(Employee.first_name).limit(50).all()
+        employees = query.order_by(Employee.first_name).limit(20).all()
         return {
             "total": len(employees),
             "employees": [
@@ -766,7 +517,6 @@ Universal — no fabricated data (all tools, all roles, every reply): Never use 
                     "email": e.email,
                     "position": e.position,
                     "department": e.department.name if e.department else None,
-                    "is_active": e.is_active,
                 }
                 for e in employees
             ],
@@ -851,7 +601,7 @@ Universal — no fabricated data (all tools, all roles, every reply): Never use 
             except ValueError:
                 pass
 
-        tasks = query.order_by(Task.created_at.desc()).limit(50).all()
+        tasks = query.order_by(Task.created_at.desc()).limit(20).all()
         return {
             "total": len(tasks),
             "tasks": [
@@ -1174,7 +924,7 @@ Universal — no fabricated data (all tools, all roles, every reply): Never use 
             except ValueError:
                 pass
 
-        tasks = query.order_by(Task.due_date.asc().nullslast(), Task.priority.desc()).limit(50).all()
+        tasks = query.order_by(Task.due_date.asc().nullslast(), Task.priority.desc()).limit(20).all()
         return {
             "total": len(tasks),
             "tasks": [
@@ -1184,7 +934,6 @@ Universal — no fabricated data (all tools, all roles, every reply): Never use 
                     "status": t.status.value,
                     "priority": t.priority.value,
                     "due_date": t.due_date.isoformat() if t.due_date else None,
-                    "description": t.description,
                 }
                 for t in tasks
             ],
@@ -1333,7 +1082,8 @@ Universal — no fabricated data (all tools, all roles, every reply): Never use 
         messages = [{"role": "system", "content": self._system_prompt(user, user.role)}]
 
         if conversation_history:
-            messages.extend(conversation_history[-28:])
+            # Keep last 6 messages (3 turns) — enough for multi-turn context without bloating tokens
+            messages.extend(conversation_history[-6:])
         messages.append({"role": "user", "content": question})
 
         total_tokens = 0
@@ -1345,7 +1095,7 @@ Universal — no fabricated data (all tools, all roles, every reply): Never use 
                 tools=tools,
                 tool_choice="auto",
                 temperature=0.3,
-                max_tokens=1000,
+                max_tokens=600,
             )
 
             # Accumulate real token counts from OpenAI
@@ -1370,10 +1120,16 @@ Universal — no fabricated data (all tools, all roles, every reply): Never use 
                 logger.info(f"Agent calling tool: {fn_name} with args: {fn_args}")
                 result = self._run_tool(fn_name, fn_args, db, user)
 
+                # Cap tool result size to ~2000 chars to prevent large payloads
+                # inflating subsequent rounds in the loop
+                result_str = json.dumps(result)
+                if len(result_str) > 2000:
+                    result_str = result_str[:2000] + "...(truncated)"
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": json.dumps(result),
+                    "content": result_str,
                 })
 
         # Fallback if loop exhausted

@@ -1,12 +1,12 @@
-from typing import List, Optional, Tuple
-from sqlalchemy.orm import Session
+from typing import Any, Dict, List, Optional, Tuple
+from sqlalchemy.orm import Session, joinedload
 from fastapi import HTTPException, status
 import logging
 
 from app.api.v1.models.task_model import Task, TaskStatus, TaskPriority
 from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.project_model import Project
-from app.api.v1.schemas.task_schema import TaskCreate, TaskUpdate
+from app.api.v1.schemas.task_schema import TaskCreate, TaskUpdate, SubtaskCreate
 from app.api.v1.services.vector_sync_service import VectorSyncService
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,18 @@ class TaskService:
                     detail="Project not found in company",
                 )
 
+        # Validate parent task if provided
+        parent_task_id = getattr(data, "parent_task_id", None)
+        if parent_task_id:
+            parent = db.query(Task).filter(
+                Task.id == parent_task_id,
+                Task.company_id == company_id,
+            ).first()
+            if not parent:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent task not found")
+
+        position = TaskService._next_position(db, company_id, parent_task_id)
+
         task = Task(
             company_id=company_id,
             title=data.title,
@@ -60,6 +72,8 @@ class TaskService:
             assigned_to_employee_id=data.assigned_to_employee_id,
             project_id=data.project_id,
             created_by_user_id=creator_user_id,
+            parent_task_id=parent_task_id,
+            position=position,
         )
         db.add(task)
         db.commit()
@@ -318,6 +332,180 @@ class TaskService:
                     logger.error(f"Failed to emit task_assigned WebSocket event on reassignment: {e}")
         
         return task
+
+    # ─── Hierarchy helpers ────────────────────────────────────────────
+
+    @staticmethod
+    def _next_position(db: Session, company_id: int, parent_task_id: Optional[int]) -> int:
+        """Return the next available position under a given parent (or top-level)."""
+        from sqlalchemy import func
+        q = db.query(func.count(Task.id)).filter(Task.company_id == company_id)
+        if parent_task_id is None:
+            q = q.filter(Task.parent_task_id.is_(None))
+        else:
+            q = q.filter(Task.parent_task_id == parent_task_id)
+        return q.scalar() or 0
+
+    @staticmethod
+    def create_subtask(
+        db: Session,
+        company_id: int,
+        creator_user_id: int,
+        parent_task_id: int,
+        data: SubtaskCreate,
+    ) -> Task:
+        """Create a child task under an existing task."""
+        # Validate parent exists and belongs to company
+        parent = db.query(Task).filter(
+            Task.id == parent_task_id,
+            Task.company_id == company_id,
+        ).first()
+        if not parent:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent task not found")
+
+        # Validate assignee
+        if data.assigned_to_employee_id:
+            assignee = db.query(Employee).filter(
+                Employee.id == data.assigned_to_employee_id,
+                Employee.company_id == company_id,
+                Employee.is_active == True,
+            ).first()
+            if not assignee:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Assigned employee not found in company")
+
+        position = TaskService._next_position(db, company_id, parent_task_id)
+
+        task = Task(
+            company_id=company_id,
+            title=data.title,
+            description=data.description,
+            priority=data.priority or TaskPriority.MEDIUM,
+            status=TaskStatus.OPEN,
+            due_date=data.due_date,
+            assigned_to_employee_id=data.assigned_to_employee_id,
+            project_id=data.project_id or parent.project_id,
+            created_by_user_id=creator_user_id,
+            parent_task_id=parent_task_id,
+            position=position,
+            branch=data.branch,
+        )
+        db.add(task)
+        db.commit()
+        db.refresh(task)
+
+        try:
+            sync_service = VectorSyncService()
+            sync_service.sync_task(db, task.id)
+        except Exception as e:
+            logger.error(f"Failed to sync subtask {task.id} to vector store: {e}")
+
+        return task
+
+    @staticmethod
+    def list_subtasks(db: Session, company_id: int, parent_task_id: int) -> List[Task]:
+        """Return direct children of a task, ordered by position."""
+        # Validate parent
+        parent = db.query(Task).filter(
+            Task.id == parent_task_id,
+            Task.company_id == company_id,
+        ).first()
+        if not parent:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent task not found")
+
+        return (
+            db.query(Task)
+            .options(joinedload(Task.assigned_to_employee), joinedload(Task.project))
+            .filter(Task.company_id == company_id, Task.parent_task_id == parent_task_id)
+            .order_by(Task.position)
+            .all()
+        )
+
+    @staticmethod
+    def _load_subtask_tree(db: Session, company_id: int, task: Task) -> Task:
+        """Recursively eager-load subtasks onto a task object (in-place)."""
+        children = (
+            db.query(Task)
+            .options(joinedload(Task.assigned_to_employee), joinedload(Task.project))
+            .filter(Task.company_id == company_id, Task.parent_task_id == task.id)
+            .order_by(Task.position)
+            .all()
+        )
+        for child in children:
+            TaskService._load_subtask_tree(db, company_id, child)
+        task.subtasks = children
+        return task
+
+    @staticmethod
+    def _assign_task_numbers(tasks: List[Task], prefix: str = "") -> int:
+        """
+        Walk the subtask tree and attach a computed `task_number` attribute
+        (e.g. "1", "1.2", "2.1.3") to each Task object.
+        Returns total count of nodes visited (for summary stats).
+        """
+        total = 0
+        for idx, task in enumerate(tasks):
+            num = f"{idx + 1}" if not prefix else f"{prefix}.{idx + 1}"
+            task.task_number = num  # type: ignore[attr-defined]
+            total += 1
+            if hasattr(task, "subtasks") and task.subtasks:
+                total += TaskService._assign_task_numbers(task.subtasks, num)
+        return total
+
+    @staticmethod
+    def get_task_tree(db: Session, company_id: int, task_id: int) -> Tuple[Task, int]:
+        """
+        Return the task with all nested subtasks loaded as a tree.
+        Also returns the total count of all nodes in the tree (including root).
+        """
+        task = (
+            db.query(Task)
+            .options(joinedload(Task.assigned_to_employee), joinedload(Task.project))
+            .filter(Task.id == task_id, Task.company_id == company_id)
+            .first()
+        )
+        if not task:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+
+        TaskService._load_subtask_tree(db, company_id, task)
+        task.task_number = "1"  # type: ignore[attr-defined]
+        total = 1
+        if task.subtasks:
+            total += TaskService._assign_task_numbers(task.subtasks, "1")
+        return task, total
+
+    @staticmethod
+    def list_tasks_as_tree(
+        db: Session,
+        company_id: int,
+        status_filter: Optional[TaskStatus] = None,
+        priority_filter: Optional[TaskPriority] = None,
+        assigned_to_employee_id: Optional[int] = None,
+        project_id: Optional[int] = None,
+    ) -> Tuple[List[Task], int]:
+        """
+        Return all top-level tasks (parent_task_id IS NULL) with full nested subtrees.
+        Returns (root_tasks, total_node_count_across_all_trees).
+        """
+        query = (
+            db.query(Task)
+            .options(joinedload(Task.assigned_to_employee), joinedload(Task.project))
+            .filter(Task.company_id == company_id, Task.parent_task_id.is_(None))
+        )
+        if status_filter:
+            query = query.filter(Task.status == status_filter)
+        if priority_filter:
+            query = query.filter(Task.priority == priority_filter)
+        if assigned_to_employee_id:
+            query = query.filter(Task.assigned_to_employee_id == assigned_to_employee_id)
+        if project_id:
+            query = query.filter(Task.project_id == project_id)
+
+        root_tasks = query.order_by(Task.position).all()
+        for t in root_tasks:
+            TaskService._load_subtask_tree(db, company_id, t)
+
+        total = TaskService._assign_task_numbers(root_tasks)
+        return root_tasks, total
 
     @staticmethod
     def close_task(db: Session, company_id: int, task_id: int) -> Task:

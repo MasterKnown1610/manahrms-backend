@@ -20,6 +20,9 @@ from app.api.v1.schemas.task_schema import (
     TaskPermissionGrant,
     TaskPermissionResponse,
     MyTaskPermissionsResponse,
+    SubtaskCreate,
+    TaskTreeNode,
+    TaskTreeResponse,
 )
 from app.api.v1.services.task_service import TaskService
 from app.api.v1.services.task_permission_service import TaskPermissionService
@@ -225,6 +228,7 @@ async def get_task_by_id(
             joinedload(Task.created_by_user),
             joinedload(Task.comments).joinedload(TaskComment.user),
             joinedload(Task.commits).joinedload(TaskCommit.added_by),
+            joinedload(Task.subtasks).joinedload(Task.assigned_to_employee),
         )
         .filter(Task.id == task_id, Task.company_id == current_user.company_id)
         .first()
@@ -288,6 +292,131 @@ async def close_task_by_id(
         .first()
     )
     return TaskResponse.model_validate(task_with_relations)
+
+
+# ─────────────────────────────────────────────────────────────────
+#  Hierarchy — Subtasks & Tree
+# ─────────────────────────────────────────────────────────────────
+
+@router.get("/list/tree", response_model=TaskTreeResponse, summary="Full task hierarchy tree")
+async def get_tasks_tree(
+    status: Optional[TaskStatus] = Query(None, description="Filter top-level tasks by status"),
+    priority: Optional[TaskPriority] = Query(None),
+    assigned_to_employee_id: Optional[int] = Query(None),
+    project_id: Optional[int] = Query(None),
+    current_user: User = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_database_session),
+):
+    """
+    Return all top-level tasks as a nested tree.
+
+    Each task carries a `task_number` (e.g. **"1"**, **"2"**) and a `subtasks` list
+    whose own items have numbers like **"1.1"**, **"1.2"**, and their children **"1.1.1"**, etc.
+
+    Use `status` / `priority` / `assigned_to_employee_id` / `project_id` to pre-filter
+    which *root* tasks are returned (subtasks are always included regardless of filters).
+
+    Employees without task-manager access only see top-level tasks assigned to them.
+    """
+    # Employees without manager access see only their own root tasks
+    emp_filter = None
+    if current_user.role == UserRole.EMPLOYEE and not TaskPermissionService.has_task_manager_access(db, current_user):
+        if not current_user.employee_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is not associated with an employee")
+        emp_filter = current_user.employee_id
+
+    root_tasks, total = TaskService.list_tasks_as_tree(
+        db=db,
+        company_id=current_user.company_id,
+        status_filter=status,
+        priority_filter=priority,
+        assigned_to_employee_id=assigned_to_employee_id or emp_filter,
+        project_id=project_id,
+    )
+
+    nodes = [TaskTreeNode.model_validate(t) for t in root_tasks]
+    return TaskTreeResponse(
+        tasks=nodes,
+        total_root_tasks=len(nodes),
+        total_tasks=total,
+    )
+
+
+@router.get("/{task_id}/tree", response_model=TaskTreeNode, summary="Tree rooted at a specific task")
+async def get_single_task_tree(
+    task_id: int,
+    current_user: User = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_database_session),
+):
+    """
+    Return a single task together with all its nested subtasks as a tree.
+    The root task always has `task_number = "1"` and children are numbered "1.1", "1.1.1", etc.
+    """
+    task, _ = TaskService.get_task_tree(db, current_user.company_id, task_id)
+
+    # Employees without manager access can only see tasks assigned to them (or their subtasks)
+    if current_user.role == UserRole.EMPLOYEE and not TaskPermissionService.has_task_manager_access(db, current_user):
+        if task.assigned_to_employee_id != current_user.employee_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this task")
+
+    return TaskTreeNode.model_validate(task)
+
+
+@router.post(
+    "/{task_id}/subtasks",
+    response_model=TaskResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a subtask",
+)
+async def create_subtask(
+    task_id: int,
+    data: SubtaskCreate,
+    current_user: User = Depends(require_task_manager),
+    db: Session = Depends(get_database_session),
+):
+    """
+    Create a child task under **task_id**.
+
+    - The new task's `parent_task_id` is set to `task_id` automatically.
+    - `position` is auto-assigned as the next available slot at that level.
+    - Inherits `project_id` from the parent if not provided.
+
+    The resulting numbering: if the parent is **"1"** this becomes **"1.1"** (or 1.2, 1.3 …
+    depending on how many subtasks already exist).
+    """
+    task = TaskService.create_subtask(
+        db=db,
+        company_id=current_user.company_id,
+        creator_user_id=current_user.id,
+        parent_task_id=task_id,
+        data=data,
+    )
+    task_with_relations = (
+        db.query(Task)
+        .options(joinedload(Task.assigned_to_employee), joinedload(Task.project))
+        .filter(Task.id == task.id, Task.company_id == current_user.company_id)
+        .first()
+    )
+    return TaskResponse.model_validate(task_with_relations)
+
+
+@router.get(
+    "/{task_id}/subtasks",
+    response_model=List[TaskResponse],
+    summary="List direct subtasks",
+)
+async def list_subtasks(
+    task_id: int,
+    current_user: User = Depends(get_current_authenticated_user),
+    db: Session = Depends(get_database_session),
+):
+    """
+    Return the **direct children** of a task, ordered by `position`.
+    Use `GET /tasks/{task_id}/tree` to get the full nested tree.
+    """
+    _assert_task_accessible(db, task_id, current_user)
+    subtasks = TaskService.list_subtasks(db, current_user.company_id, task_id)
+    return [TaskResponse.model_validate(t) for t in subtasks]
 
 
 # ─────────────────────────────────────────────────────────────────

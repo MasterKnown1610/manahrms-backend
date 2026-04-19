@@ -158,15 +158,15 @@ def initialize_database_on_startup():
                         # First ensure projects table exists (it should, but check)
                         if 'projects' in current_tables:
                             conn.execute(text("""
-                                ALTER TABLE tasks 
+                                ALTER TABLE tasks
                                 ADD COLUMN IF NOT EXISTS project_id INTEGER;
                             """))
                             # Add foreign key constraint
                             try:
                                 conn.execute(text("""
-                                    ALTER TABLE tasks 
-                                    ADD CONSTRAINT tasks_project_id_fkey 
-                                    FOREIGN KEY (project_id) 
+                                    ALTER TABLE tasks
+                                    ADD CONSTRAINT tasks_project_id_fkey
+                                    FOREIGN KEY (project_id)
                                     REFERENCES projects(id) ON DELETE SET NULL;
                                 """))
                             except ProgrammingError:
@@ -174,19 +174,47 @@ def initialize_database_on_startup():
                                 try:
                                     conn.execute(text("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_project_id_fkey;"))
                                     conn.execute(text("""
-                                        ALTER TABLE tasks 
-                                        ADD CONSTRAINT tasks_project_id_fkey 
-                                        FOREIGN KEY (project_id) 
+                                        ALTER TABLE tasks
+                                        ADD CONSTRAINT tasks_project_id_fkey
+                                        FOREIGN KEY (project_id)
                                         REFERENCES projects(id) ON DELETE SET NULL;
                                     """))
                                 except ProgrammingError:
                                     pass  # Skip if still fails
                             # Create index for project_id
                             conn.execute(text("""
-                                CREATE INDEX IF NOT EXISTS tasks_project_id_idx 
+                                CREATE INDEX IF NOT EXISTS tasks_project_id_idx
                                 ON tasks(project_id) WHERE project_id IS NOT NULL;
                             """))
                             tasks_updated = True
+
+                    # ── Hierarchy columns (parent_task_id, position) ──────────
+                    if 'parent_task_id' not in tasks_columns:
+                        conn.execute(text("""
+                            ALTER TABLE tasks
+                            ADD COLUMN IF NOT EXISTS parent_task_id INTEGER;
+                        """))
+                        try:
+                            conn.execute(text("""
+                                ALTER TABLE tasks
+                                ADD CONSTRAINT tasks_parent_task_id_fkey
+                                FOREIGN KEY (parent_task_id)
+                                REFERENCES tasks(id) ON DELETE CASCADE;
+                            """))
+                        except ProgrammingError:
+                            pass  # constraint already exists
+                        conn.execute(text("""
+                            CREATE INDEX IF NOT EXISTS tasks_parent_task_id_idx
+                            ON tasks(parent_task_id) WHERE parent_task_id IS NOT NULL;
+                        """))
+                        tasks_updated = True
+
+                    if 'position' not in tasks_columns:
+                        conn.execute(text("""
+                            ALTER TABLE tasks
+                            ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 0;
+                        """))
+                        tasks_updated = True
                 
                 if not missing_columns and not employees_missing_columns:
                     if tasks_updated:

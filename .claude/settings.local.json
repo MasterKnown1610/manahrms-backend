@@ -5,7 +5,10 @@
       "Bash(python -c \"from app.api.router import api_router; print\\('main router OK'\\)\")",
       "Bash(python -c \"from app.db.init_superadmin import init_superadmin; print\\('init_superadmin OK'\\)\")",
       "Bash(python -m app.db.init_superadmin)",
-      "Bash(python -c ':*)"
+      "Bash(python -c ':*)",
+      "Bash(python -c ' *)",
+      "Bash(python migrate_business_os.py)",
+      "Bash(python seed_test_companies.py)"
     ]
   }
 }

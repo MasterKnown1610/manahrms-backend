@@ -29,3 +29,12 @@ from app.api.v1.models.subscription_model import (
     AIUsage, CompanyAIUsage, AIAddon, BillingCycle, SubscriptionStatus, AIAddonType
 )  # noqa
 from app.api.v1.models.superadmin_model import SuperAdmin  # noqa
+# ── New Business OS modules (additive — do not break existing tables) ──────────
+from app.api.v1.models.company_profile_model import CompanyProfile  # noqa
+from app.api.v1.models.inventory_model import InventoryCategory, InventoryItem, InventoryTransaction  # noqa
+from app.api.v1.models.asset_model import Asset, AssetAssignment, AssetMaintenanceLog  # noqa
+from app.api.v1.models.crm_model import Client, ClientInteraction  # noqa
+from app.api.v1.models.booking_model import BookingResource, Booking  # noqa
+from app.api.v1.models.billing_ops_model import Invoice, InvoiceItem  # noqa
+from app.api.v1.models.shift_model import Shift, ShiftAssignment  # noqa
+from app.api.v1.models.donation_model import Donation  # noqa

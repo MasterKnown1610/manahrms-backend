@@ -93,6 +93,49 @@ PRODUCT_MODULES: list[dict[str, Any]] = [
         "description": "Company subscription purchase and management (Razorpay)",
         "category": "Platform",
     },
+    # ── New Business OS modules ───────────────────────────────────────────────
+    {
+        "key": "inventory",
+        "label": "Inventory",
+        "description": "Stock management for medicines, ingredients, supplies, prasad",
+        "category": "Operations",
+    },
+    {
+        "key": "assets",
+        "label": "Asset Management",
+        "description": "Track physical assets, assign to employees, log maintenance",
+        "category": "Operations",
+    },
+    {
+        "key": "crm",
+        "label": "CRM / Clients",
+        "description": "Manage clients, patients, customers, devotees and their interactions",
+        "category": "Business",
+    },
+    {
+        "key": "booking",
+        "label": "Booking & Scheduling",
+        "description": "Appointments, table reservations, venue bookings, slot management",
+        "category": "Business",
+    },
+    {
+        "key": "billing_ops",
+        "label": "Invoicing",
+        "description": "Create and track client invoices and payments",
+        "category": "Business",
+    },
+    {
+        "key": "shifts",
+        "label": "Shift Scheduling",
+        "description": "Define shift patterns and assign employees to shifts",
+        "category": "Core HR",
+    },
+    {
+        "key": "donations",
+        "label": "Donations",
+        "description": "Record and track donations for temples and charitable organizations",
+        "category": "Business",
+    },
 ]
 
 MODULE_KEYS: frozenset[str] = frozenset(m["key"] for m in PRODUCT_MODULES)

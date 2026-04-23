@@ -21,10 +21,62 @@ from app.api.v1.models.attendance_model import Attendance
 from app.api.v1.models.leave_model import LeaveRequest, LeaveType, LeaveStatus, LeaveBalance
 from app.api.v1.models.meeting_model import Meeting, MeetingParticipant
 from app.api.v1.models.project_model import Project
+from app.api.v1.models.company_profile_model import CompanyProfile, IndustryType
+from app.api.v1.models.inventory_model import InventoryItem, InventoryTransaction, TransactionType
+from app.api.v1.models.crm_model import Client, ClientInteraction
+from app.api.v1.models.booking_model import Booking, BookingResource, BookingStatus
+from app.api.v1.models.billing_ops_model import Invoice, InvoiceStatus
+from app.api.v1.models.shift_model import Shift, ShiftAssignment
+from app.api.v1.models.donation_model import Donation
 
 logger = logging.getLogger(__name__)
 
-MAX_TOOL_ROUNDS = 5  # prevent infinite loops
+MAX_TOOL_ROUNDS = 8  # increased for multi-step agentic tasks across new modules
+
+# ── Industry context helpers ──────────────────────────────────────────────────
+
+_INDUSTRY_CONTEXT = {
+    IndustryType.HOSPITAL: (
+        "This is a hospital/clinic. Use medical terminology. "
+        "Clients are 'patients'. Bookings are 'appointments'. "
+        "Inventory items are medicines/supplies. Shifts are doctor/nurse shifts. "
+        "When asked about scheduling, think doctor slots and OPD appointments."
+    ),
+    IndustryType.RESTAURANT: (
+        "This is a restaurant/food business. "
+        "Clients are 'customers'. Bookings are 'table reservations'. "
+        "Inventory items are ingredients/raw materials. "
+        "Shifts are kitchen/floor staff shifts. "
+        "When asked about stock, think ingredient quantities and reorder levels."
+    ),
+    IndustryType.TEMPLE: (
+        "This is a temple/religious organization. "
+        "Clients are 'devotees' or 'donors'. "
+        "Bookings are 'pooja slots' or 'event registrations'. "
+        "Inventory is prasad/flowers/ritual supplies. "
+        "Donations module is key here — track donor info and receipts."
+    ),
+    IndustryType.SCHOOL: (
+        "This is a school/educational institution. "
+        "Clients are 'students' or 'parents'. "
+        "Bookings are 'classroom/lab reservations'. "
+        "Inventory is stationery/lab equipment. "
+        "Employees are teachers and administrative staff."
+    ),
+    IndustryType.EVENT: (
+        "This is an event management company. "
+        "Clients are 'event clients'. Bookings are 'event bookings' or 'venue reservations'. "
+        "Inventory is AV equipment, decorations, logistics. "
+        "Invoice clients per event. CRM tracks event requirements and feedback."
+    ),
+    IndustryType.SME: (
+        "This is a small/medium enterprise. "
+        "Clients are 'customers' or 'prospects'. "
+        "Use CRM for sales pipeline. Invoice for billing. "
+        "Inventory for office/product stock management."
+    ),
+    IndustryType.GENERIC: "",
+}
 
 # Kept empty — the no-fabrication rule lives in the system prompt once, not repeated per tool.
 _TOOL_USE_REAL_DATA_ONLY = ""
@@ -262,6 +314,231 @@ ADMIN_TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    # ── Inventory tools ───────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "list_inventory_items",
+            "description": "List inventory items. For restaurant: ingredients. For hospital: medicines. For temple: prasad/ritual supplies.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search": {"type": "string"},
+                    "low_stock_only": {"type": "boolean", "description": "Only return items below reorder level"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_stock",
+            "description": "Add stock to an inventory item (stock_in). Confirm before calling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "integer"},
+                    "quantity": {"type": "number"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["item_id", "quantity"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consume_stock",
+            "description": "Consume/use inventory stock (stock_out). Confirm before calling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "item_id": {"type": "integer"},
+                    "quantity": {"type": "number"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["item_id", "quantity"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_low_stock_alerts",
+            "description": "Get list of items that are below their reorder level.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    # ── CRM tools ─────────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "list_clients",
+            "description": "List clients/patients/customers/devotees. Use industry terminology.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "search": {"type": "string"},
+                    "industry_label": {"type": "string", "description": "Filter by label e.g. 'patient', 'customer'"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_client",
+            "description": "Add a new client/patient/customer. Confirm before calling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "phone": {"type": "string"},
+                    "email": {"type": "string"},
+                    "industry_label": {"type": "string", "description": "e.g. 'patient', 'customer', 'devotee'"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["name"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "log_client_interaction",
+            "description": "Log a note, call, or visit for a client. Confirm before calling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "client_id": {"type": "integer"},
+                    "interaction_type": {"type": "string", "enum": ["call", "visit", "email", "note", "appointment"]},
+                    "subject": {"type": "string"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["client_id", "notes"],
+            },
+        },
+    },
+    # ── Booking tools ─────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "list_bookings",
+            "description": "List bookings/appointments/reservations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["pending", "confirmed", "cancelled", "completed", "no_show"]},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_booking",
+            "description": "Create a booking/appointment/reservation. Confirm before calling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "start_datetime": {"type": "string", "description": "ISO datetime e.g. 2025-04-15T10:00:00"},
+                    "end_datetime": {"type": "string", "description": "ISO datetime"},
+                    "client_id": {"type": "integer"},
+                    "employee_id": {"type": "integer", "description": "Assigned doctor/chef/staff"},
+                    "resource_id": {"type": "integer", "description": "Room/table/venue ID"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["title", "start_datetime", "end_datetime"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_booking_resources",
+            "description": "List available bookable resources (rooms, tables, venues, doctor slots).",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    # ── Invoice tools ─────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "list_invoices",
+            "description": "List invoices with optional status filter.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string", "enum": ["draft", "sent", "paid", "overdue", "cancelled"]},
+                },
+                "required": [],
+            },
+        },
+    },
+    # ── Shift tools ───────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "list_shifts",
+            "description": "List all shift patterns (Morning, Night, Evening etc.).",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_shift_assignments",
+            "description": "List current employee shift assignments.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    # ── Donation tools ────────────────────────────────────────────────────────
+    {
+        "type": "function",
+        "function": {
+            "name": "list_donations",
+            "description": "List donations (for temples/charitable organizations).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "purpose": {"type": "string"},
+                    "donor_name": {"type": "string"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "record_donation",
+            "description": "Record a donation. Confirm before calling.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "donor_name": {"type": "string"},
+                    "amount": {"type": "number"},
+                    "purpose": {"type": "string"},
+                    "donation_mode": {"type": "string", "enum": ["cash", "online", "cheque", "demand_draft", "upi"]},
+                    "donor_phone": {"type": "string"},
+                    "notes": {"type": "string"},
+                },
+                "required": ["donor_name", "amount"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_donation_summary",
+            "description": "Get total donation count and amount collected.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 EMPLOYEE_TOOLS = [
@@ -389,25 +666,44 @@ class AgenticAIService:
             return ADMIN_TOOLS
         return EMPLOYEE_TOOLS
 
-    def _system_prompt(self, user: User, role: UserRole) -> str:
+    def _get_industry_context(self, db: Session, company_id: int) -> str:
+        profile = db.query(CompanyProfile).filter(CompanyProfile.company_id == company_id).first()
+        if not profile:
+            return ""
+        return _INDUSTRY_CONTEXT.get(profile.industry_type, "")
+
+    def _system_prompt(self, user: User, role: UserRole, db: Optional[Session] = None) -> str:
         today = date.today().isoformat()
         role_desc = "company admin" if role == UserRole.ADMIN else "employee"
         if role == UserRole.ADMIN:
-            confirm_tools = "create_employee, create_task, update_task, schedule_meeting, create_department, approve_reject_leave"
+            confirm_tools = (
+                "create_employee, create_task, update_task, schedule_meeting, create_department, "
+                "approve_reject_leave, add_stock, consume_stock, add_client, log_client_interaction, "
+                "create_booking, record_donation"
+            )
         else:
-            confirm_tools = "punch_in, punch_out, apply_for_leave, update_my_task_status"
-        return f"""You are an HRMS assistant for {user.full_name} ({role_desc}). Today: {today}.
+            confirm_tools = "punch_in, punch_out, apply_for_leave, update_my_task_status, consume_stock, create_booking"
+
+        industry_ctx = ""
+        if db:
+            industry_ctx = self._get_industry_context(db, user.company_id)
+
+        return f"""You are an intelligent Business OS assistant for {user.full_name} ({role_desc}). Today: {today}.
+
+{f"INDUSTRY CONTEXT: {industry_ctx}" if industry_ctx else ""}
+
+CAPABILITIES: You help with HR (employees, attendance, leaves, tasks, meetings) AND business operations (inventory, assets, CRM clients/patients/customers, bookings/appointments, invoices, shifts, donations). Adapt your language to the industry context above.
 
 RULES:
-1. Never fabricate names, emails, IDs, dates, links, or any data. Use only what the user typed or tool results returned. Ask for missing info — never invent.
+1. Never fabricate names, emails, IDs, dates, or any data. Use only what the user typed or tool results returned.
 2. Mutating tools ({confirm_tools}) require confirmation:
-   a. Use read-only tools first to resolve names/IDs if needed (no confirmation needed for those).
-   b. If any required param is missing, ask for only what's missing — don't call the mutating tool.
+   a. Use read-only tools first to resolve names/IDs.
+   b. Ask for missing required info — never invent.
    c. Summarize the action with real values; ask "Reply yes to proceed or no to cancel."
-   d. Call the mutating tool ONLY after explicit confirmation (yes/ok/confirm/proceed).
+   d. Call the mutating tool ONLY after explicit confirmation.
    e. On success, reply briefly with key details (never echo passwords).
-3. Security: Never repeat passwords. For create_employee success: report name, code, email only.
-4. Keep responses concise and professional."""
+3. Security: Never repeat passwords.
+4. Be concise and professional. Use industry-appropriate terminology."""
 
     # ─── Tool Executors ───────────────────────────────────────────────────────
 
@@ -440,6 +736,23 @@ RULES:
             "get_my_leave_balance": self._tool_get_my_leave_balance,
             "get_my_profile": self._tool_get_my_profile,
             "update_my_task_status": self._tool_update_my_task_status,
+            # New Business OS tools
+            "list_inventory_items": self._tool_list_inventory_items,
+            "add_stock": self._tool_add_stock,
+            "consume_stock": self._tool_consume_stock,
+            "get_low_stock_alerts": self._tool_get_low_stock_alerts,
+            "list_clients": self._tool_list_clients,
+            "add_client": self._tool_add_client,
+            "log_client_interaction": self._tool_log_client_interaction,
+            "list_bookings": self._tool_list_bookings,
+            "create_booking": self._tool_create_booking,
+            "list_booking_resources": self._tool_list_booking_resources,
+            "list_invoices": self._tool_list_invoices,
+            "list_shifts": self._tool_list_shifts,
+            "list_shift_assignments": self._tool_list_shift_assignments,
+            "list_donations": self._tool_list_donations,
+            "record_donation": self._tool_record_donation,
+            "get_donation_summary": self._tool_get_donation_summary,
         }
         handler = handlers.get(name)
         if not handler:
@@ -1060,6 +1373,342 @@ RULES:
             "new_status": task.status.value,
         }
 
+    # ── Business OS tool implementations ────────────────────────────────────
+
+    def _tool_list_inventory_items(self, args: dict, db: Session, user: User) -> dict:
+        from sqlalchemy import or_
+        query = db.query(InventoryItem).filter(
+            InventoryItem.company_id == user.company_id,
+            InventoryItem.deleted_at.is_(None),
+            InventoryItem.is_active == True,
+        )
+        search = args.get("search")
+        if search:
+            query = query.filter(InventoryItem.name.ilike(f"%{search}%"))
+        items = query.order_by(InventoryItem.name).limit(30).all()
+        result = []
+        for i in items:
+            is_low = i.reorder_level is not None and i.quantity_on_hand <= i.reorder_level
+            if args.get("low_stock_only") and not is_low:
+                continue
+            result.append({
+                "id": i.id,
+                "name": i.name,
+                "sku": i.sku,
+                "quantity_on_hand": float(i.quantity_on_hand),
+                "unit": i.unit,
+                "reorder_level": float(i.reorder_level) if i.reorder_level else None,
+                "is_low_stock": is_low,
+                "item_type": i.item_type.value,
+            })
+        return {"total": len(result), "items": result}
+
+    def _tool_add_stock(self, args: dict, db: Session, user: User) -> dict:
+        from app.api.v1.models.inventory_model import TransactionType
+        item = db.query(InventoryItem).filter(
+            InventoryItem.id == args["item_id"],
+            InventoryItem.company_id == user.company_id,
+            InventoryItem.deleted_at.is_(None),
+        ).first()
+        if not item:
+            return {"error": "Item not found"}
+        qty = args["quantity"]
+        item.quantity_on_hand += qty
+        txn = InventoryTransaction(
+            company_id=user.company_id,
+            item_id=item.id,
+            transaction_type=TransactionType.STOCK_IN,
+            quantity=qty,
+            notes=args.get("notes"),
+            performed_by_user_id=user.id,
+        )
+        db.add(txn)
+        db.commit()
+        return {"success": True, "item": item.name, "added": qty, "new_quantity": float(item.quantity_on_hand)}
+
+    def _tool_consume_stock(self, args: dict, db: Session, user: User) -> dict:
+        from app.api.v1.models.inventory_model import TransactionType
+        item = db.query(InventoryItem).filter(
+            InventoryItem.id == args["item_id"],
+            InventoryItem.company_id == user.company_id,
+            InventoryItem.deleted_at.is_(None),
+        ).first()
+        if not item:
+            return {"error": "Item not found"}
+        qty = args["quantity"]
+        if item.quantity_on_hand < qty:
+            return {"error": f"Insufficient stock. Available: {float(item.quantity_on_hand)} {item.unit or ''}"}
+        item.quantity_on_hand -= qty
+        txn = InventoryTransaction(
+            company_id=user.company_id,
+            item_id=item.id,
+            transaction_type=TransactionType.STOCK_OUT,
+            quantity=qty,
+            notes=args.get("notes"),
+            performed_by_user_id=user.id,
+        )
+        db.add(txn)
+        db.commit()
+        return {"success": True, "item": item.name, "consumed": qty, "remaining": float(item.quantity_on_hand)}
+
+    def _tool_get_low_stock_alerts(self, args: dict, db: Session, user: User) -> dict:
+        items = db.query(InventoryItem).filter(
+            InventoryItem.company_id == user.company_id,
+            InventoryItem.deleted_at.is_(None),
+            InventoryItem.is_active == True,
+            InventoryItem.reorder_level.isnot(None),
+        ).all()
+        alerts = [
+            {"id": i.id, "name": i.name, "quantity": float(i.quantity_on_hand),
+             "reorder_level": float(i.reorder_level), "unit": i.unit}
+            for i in items if i.quantity_on_hand <= i.reorder_level
+        ]
+        return {"total_alerts": len(alerts), "items": alerts}
+
+    def _tool_list_clients(self, args: dict, db: Session, user: User) -> dict:
+        query = db.query(Client).filter(
+            Client.company_id == user.company_id,
+            Client.deleted_at.is_(None),
+            Client.is_active == True,
+        )
+        search = args.get("search")
+        if search:
+            query = query.filter(Client.name.ilike(f"%{search}%"))
+        label = args.get("industry_label")
+        if label:
+            query = query.filter(Client.industry_label == label)
+        clients = query.order_by(Client.name).limit(20).all()
+        return {
+            "total": len(clients),
+            "clients": [
+                {"id": c.id, "name": c.name, "phone": c.phone, "email": c.email,
+                 "industry_label": c.industry_label}
+                for c in clients
+            ],
+        }
+
+    def _tool_add_client(self, args: dict, db: Session, user: User) -> dict:
+        from app.api.v1.models.crm_model import ClientType
+        client = Client(
+            company_id=user.company_id,
+            name=args["name"],
+            phone=args.get("phone"),
+            email=args.get("email"),
+            industry_label=args.get("industry_label"),
+            notes=args.get("notes"),
+            client_type=ClientType.INDIVIDUAL,
+        )
+        db.add(client)
+        db.commit()
+        db.refresh(client)
+        return {"success": True, "client_id": client.id, "name": client.name}
+
+    def _tool_log_client_interaction(self, args: dict, db: Session, user: User) -> dict:
+        from app.api.v1.models.crm_model import InteractionType
+        client = db.query(Client).filter(
+            Client.id == args["client_id"],
+            Client.company_id == user.company_id,
+        ).first()
+        if not client:
+            return {"error": "Client not found"}
+        itype_str = args.get("interaction_type", "note")
+        try:
+            itype = InteractionType(itype_str)
+        except ValueError:
+            itype = InteractionType.NOTE
+        interaction = ClientInteraction(
+            company_id=user.company_id,
+            client_id=client.id,
+            interaction_type=itype,
+            subject=args.get("subject"),
+            notes=args.get("notes"),
+            performed_by_user_id=user.id,
+            interaction_date=datetime.utcnow(),
+        )
+        db.add(interaction)
+        db.commit()
+        return {"success": True, "interaction_id": interaction.id, "client": client.name}
+
+    def _tool_list_bookings(self, args: dict, db: Session, user: User) -> dict:
+        query = db.query(Booking).filter(Booking.company_id == user.company_id)
+        status_str = args.get("status")
+        if status_str:
+            try:
+                query = query.filter(Booking.status == BookingStatus(status_str))
+            except ValueError:
+                pass
+        bookings = query.order_by(Booking.start_datetime).limit(20).all()
+        return {
+            "total": len(bookings),
+            "bookings": [
+                {
+                    "id": b.id,
+                    "title": b.title,
+                    "status": b.status.value,
+                    "start": b.start_datetime.isoformat() if b.start_datetime else None,
+                    "end": b.end_datetime.isoformat() if b.end_datetime else None,
+                }
+                for b in bookings
+            ],
+        }
+
+    def _tool_create_booking(self, args: dict, db: Session, user: User) -> dict:
+        if args["end_datetime"] <= args["start_datetime"]:
+            return {"error": "end_datetime must be after start_datetime"}
+        start = datetime.fromisoformat(args["start_datetime"])
+        end = datetime.fromisoformat(args["end_datetime"])
+        booking = Booking(
+            company_id=user.company_id,
+            title=args["title"],
+            start_datetime=start,
+            end_datetime=end,
+            client_id=args.get("client_id"),
+            employee_id=args.get("employee_id"),
+            resource_id=args.get("resource_id"),
+            notes=args.get("notes"),
+            booked_by_user_id=user.id,
+            status=BookingStatus.CONFIRMED,
+        )
+        db.add(booking)
+        db.commit()
+        db.refresh(booking)
+        return {
+            "success": True,
+            "booking_id": booking.id,
+            "title": booking.title,
+            "start": booking.start_datetime.isoformat(),
+            "end": booking.end_datetime.isoformat(),
+            "status": booking.status.value,
+        }
+
+    def _tool_list_booking_resources(self, args: dict, db: Session, user: User) -> dict:
+        resources = db.query(BookingResource).filter(
+            BookingResource.company_id == user.company_id,
+            BookingResource.is_active == True,
+        ).order_by(BookingResource.name).all()
+        return {
+            "total": len(resources),
+            "resources": [
+                {"id": r.id, "name": r.name, "resource_type": r.resource_type, "capacity": r.capacity}
+                for r in resources
+            ],
+        }
+
+    def _tool_list_invoices(self, args: dict, db: Session, user: User) -> dict:
+        query = db.query(Invoice).filter(Invoice.company_id == user.company_id)
+        status_str = args.get("status")
+        if status_str:
+            try:
+                query = query.filter(Invoice.status == InvoiceStatus(status_str))
+            except ValueError:
+                pass
+        invoices = query.order_by(Invoice.created_at.desc()).limit(20).all()
+        return {
+            "total": len(invoices),
+            "invoices": [
+                {
+                    "id": i.id,
+                    "invoice_number": i.invoice_number,
+                    "status": i.status.value,
+                    "total_amount": float(i.total_amount),
+                    "issue_date": i.issue_date.isoformat() if i.issue_date else None,
+                    "due_date": i.due_date.isoformat() if i.due_date else None,
+                }
+                for i in invoices
+            ],
+        }
+
+    def _tool_list_shifts(self, args: dict, db: Session, user: User) -> dict:
+        shifts = db.query(Shift).filter(
+            Shift.company_id == user.company_id,
+            Shift.is_active == True,
+        ).order_by(Shift.name).all()
+        return {
+            "total": len(shifts),
+            "shifts": [
+                {"id": s.id, "name": s.name, "start_time": str(s.start_time), "end_time": str(s.end_time)}
+                for s in shifts
+            ],
+        }
+
+    def _tool_list_shift_assignments(self, args: dict, db: Session, user: User) -> dict:
+        assignments = db.query(ShiftAssignment).filter(
+            ShiftAssignment.company_id == user.company_id,
+            ShiftAssignment.effective_to.is_(None),
+        ).limit(30).all()
+        return {
+            "total": len(assignments),
+            "assignments": [
+                {
+                    "id": a.id,
+                    "employee_id": a.employee_id,
+                    "shift_id": a.shift_id,
+                    "effective_from": a.effective_from.isoformat() if a.effective_from else None,
+                }
+                for a in assignments
+            ],
+        }
+
+    def _tool_list_donations(self, args: dict, db: Session, user: User) -> dict:
+        query = db.query(Donation).filter(Donation.company_id == user.company_id)
+        if args.get("purpose"):
+            query = query.filter(Donation.purpose.ilike(f"%{args['purpose']}%"))
+        if args.get("donor_name"):
+            query = query.filter(Donation.donor_name.ilike(f"%{args['donor_name']}%"))
+        donations = query.order_by(Donation.donated_at.desc()).limit(20).all()
+        return {
+            "total": len(donations),
+            "donations": [
+                {
+                    "id": d.id,
+                    "donor_name": d.donor_name,
+                    "amount": float(d.amount),
+                    "purpose": d.purpose,
+                    "mode": d.donation_mode.value,
+                    "receipt": d.receipt_number,
+                    "date": d.donated_at.isoformat() if d.donated_at else None,
+                }
+                for d in donations
+            ],
+        }
+
+    def _tool_record_donation(self, args: dict, db: Session, user: User) -> dict:
+        from app.api.v1.models.donation_model import DonationMode
+        from app.api.v1.services.donation_service import _generate_receipt_number
+        receipt = _generate_receipt_number(db, user.company_id)
+        try:
+            mode = DonationMode(args.get("donation_mode", "cash"))
+        except ValueError:
+            mode = DonationMode.CASH
+        donation = Donation(
+            company_id=user.company_id,
+            donor_name=args["donor_name"],
+            amount=args["amount"],
+            purpose=args.get("purpose"),
+            donation_mode=mode,
+            donor_phone=args.get("donor_phone"),
+            notes=args.get("notes"),
+            receipt_number=receipt,
+            donated_at=datetime.utcnow(),
+            received_by_user_id=user.id,
+        )
+        db.add(donation)
+        db.commit()
+        db.refresh(donation)
+        return {
+            "success": True,
+            "donation_id": donation.id,
+            "receipt_number": donation.receipt_number,
+            "donor": donation.donor_name,
+            "amount": float(donation.amount),
+        }
+
+    def _tool_get_donation_summary(self, args: dict, db: Session, user: User) -> dict:
+        from sqlalchemy import func
+        total = db.query(func.sum(Donation.amount)).filter(Donation.company_id == user.company_id).scalar() or 0
+        count = db.query(func.count(Donation.id)).filter(Donation.company_id == user.company_id).scalar() or 0
+        return {"total_donations": count, "total_amount": float(total)}
+
     # ─── Agentic Loop ─────────────────────────────────────────────────────────
 
     def chat(
@@ -1079,7 +1728,7 @@ RULES:
             (response_text, total_tokens_used) — tokens are real counts from OpenAI API
         """
         tools = self._get_tools(user.role)
-        messages = [{"role": "system", "content": self._system_prompt(user, user.role)}]
+        messages = [{"role": "system", "content": self._system_prompt(user, user.role, db)}]
 
         if conversation_history:
             # Keep last 6 messages (3 turns) — enough for multi-turn context without bloating tokens

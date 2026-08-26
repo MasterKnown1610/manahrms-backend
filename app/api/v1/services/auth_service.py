@@ -113,6 +113,7 @@ class AuthService:
                 full_name=company_data.admin_full_name,
                 hashed_password=hashed_password,
                 role=UserRole.ADMIN,
+                permissions=None,
                 is_active=True,
                 is_superuser=False,
                 force_password_change=False

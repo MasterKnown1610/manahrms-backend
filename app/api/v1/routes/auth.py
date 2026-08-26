@@ -18,6 +18,7 @@ from app.api.v1.schemas.company_schema import (
     CompanyRegistrationResponse
 )
 from app.api.v1.services.auth_service import AuthService
+from app.api.v1.services.employee_service import EmployeeService
 from app.api.v1.dependencies import get_current_authenticated_user
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ async def authenticate_user_and_get_token(
         response = TokenResponse(
             access_token=access_token,
             token_type="bearer",
-            user=UserResponse.model_validate(user)
+            user=EmployeeService.to_user_response(db, user)
         )
         
         logger.info(f"Login API completed successfully for user: {user.username}")
@@ -120,9 +121,10 @@ async def authenticate_user_and_get_token(
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_authenticated_user_info(
-    current_user = Depends(get_current_authenticated_user)
+    current_user=Depends(get_current_authenticated_user),
+    db: Session = Depends(get_database_session),
 ):
-    return current_user
+    return EmployeeService.to_user_response(db, current_user)
 
 
 @router.post("/change-password", response_model=MessageResponse)

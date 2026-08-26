@@ -5,7 +5,8 @@ from app.api.v1.routes import (
     vector_sync, leaves, dashboard, chat, meetings, events, calendar,
     subscriptions, webhooks, superadmin,
     # New Business OS modules
-    company_profile, inventory, assets, crm, booking, billing_ops, shifts, donations,
+    company_profile, inventory, assets, crm, booking, billing_ops, shifts, donations, leads,
+    exotel_call, roles,
 )
 
 api_router = APIRouter()
@@ -37,5 +38,8 @@ api_router.include_router(booking.router)
 api_router.include_router(billing_ops.router)
 api_router.include_router(shifts.router)
 api_router.include_router(donations.router)
+api_router.include_router(leads.router)
+api_router.include_router(exotel_call.router)
+api_router.include_router(roles.router)
 
 

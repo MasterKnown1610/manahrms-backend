@@ -69,6 +69,26 @@ class Employee(Base):
     @property
     def full_name(self):
         return f"{self.first_name} {self.last_name}"
+
+    @property
+    def department_name(self):
+        return self.department.name if self.department else None
+
+    @property
+    def role_id(self):
+        return self.user.custom_role_id if self.user else None
+
+    @property
+    def role_name(self):
+        if self.user and self.user.custom_role:
+            return self.user.custom_role.name
+        return None
+
+    @property
+    def permissions(self):
+        if self.user and self.user.permissions:
+            return self.user.permissions
+        return {}
     
     def __repr__(self):
         return f"<Employee {self.employee_code} - {self.full_name}>"

@@ -10,7 +10,9 @@ from app.api.v1.schemas.employee_schema import (
     EmployeeUpdate,
     EmployeeResponse,
     EmployeeWithCredentials,
-    EmployeeDropdownResponse
+    EmployeeDropdownResponse,
+    EmployeePermissionsUpdate,
+    EmployeePermissionsResponse,
 )
 from app.api.v1.schemas.user_schema import MessageResponse
 from app.api.v1.schemas.common import PaginatedResponse, PaginationRequest
@@ -84,9 +86,11 @@ async def query_employees(
     
     # Apply pagination, filters, and sorting
     items, pagination_info = paginate_query(query, pagination_request, Employee)
-    
-    # Create paginated response
-    return create_paginated_response(items, pagination_info, EmployeeResponse)
+
+    return PaginatedResponse(
+        data=[EmployeeService.to_employee_response(db, emp) for emp in items],
+        pagination=pagination_info,
+    )
 
 
 @router.get("/dropdown", response_model=List[EmployeeDropdownResponse])
@@ -131,7 +135,31 @@ async def get_employee_by_id(
         current_user.company_id
     )
     
-    return EmployeeResponse.model_validate(employee)
+    return EmployeeService.to_employee_response(db, employee)
+
+
+@router.get("/{employee_id}/permissions", response_model=EmployeePermissionsResponse)
+async def get_employee_permissions(
+    employee_id: int,
+    current_user=Depends(get_current_authenticated_user),
+    db: Session = Depends(get_database_session),
+):
+    return EmployeeService.get_employee_permissions(
+        db, employee_id, current_user.company_id
+    )
+
+
+@router.patch("/{employee_id}/permissions", response_model=EmployeePermissionsResponse)
+@router.put("/{employee_id}/permissions", response_model=EmployeePermissionsResponse)
+async def update_employee_permissions(
+    employee_id: int,
+    data: EmployeePermissionsUpdate,
+    current_user=Depends(require_admin_role),
+    db: Session = Depends(get_database_session),
+):
+    return EmployeeService.update_employee_permissions(
+        db, employee_id, current_user.company_id, data
+    )
 
 
 @router.put("/{employee_id}", response_model=EmployeeResponse)
@@ -148,7 +176,7 @@ async def update_employee_information(
         employee_data
     )
     
-    return EmployeeResponse.model_validate(employee)
+    return EmployeeService.to_employee_response(db, employee)
 
 
 @router.delete("/{employee_id}", response_model=MessageResponse)

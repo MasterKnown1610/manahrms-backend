@@ -57,9 +57,45 @@ PROJECT_NAME=HRMS Backend
 ```env
 OPENAI_API_KEY=your-openai-api-key-here
 OPENAI_MODEL=gpt-3.5-turbo
+
+# Optional voice (STT/TTS) — same OPENAI_API_KEY; defaults shown
+# OPENAI_WHISPER_MODEL=whisper-1
+# OPENAI_TTS_MODEL=tts-1
+# OPENAI_TTS_VOICE=alloy
+# OPENAI_TTS_FORMAT=mp3
+# MAX_VOICE_AUDIO_SIZE=26214400
 ```
 
-**Note:** If not set, AI chatbot features will be disabled.
+**Note:** If `OPENAI_API_KEY` is not set, AI chatbot and voice (`/ai-chat/transcribe`, `/ai-chat/speak`) features will be disabled.
+
+### Exotel inbound voice agent (Dhiora → leads)
+
+Used by `/api/v1/exotel/call/*` for inbound calls on your ExoPhone (default `08047361154`).
+
+```env
+# Required for voice agent + lead creation
+OPENAI_API_KEY=your-openai-api-key-here
+EXOTEL_DEFAULT_COMPANY_ID=12
+APP_PUBLIC_URL=https://your-public-domain.com
+
+# Recommended — protects webhooks
+EXOTEL_WEBHOOK_TOKEN=your-random-webhook-secret
+
+# Optional Exotel API credentials (for future outbound/API use)
+# EXOTEL_API_KEY=
+# EXOTEL_API_TOKEN=
+# EXOTEL_ACCOUNT_SID=
+# EXOTEL_SUBDOMAIN=api.in.exotel.com
+# EXOTEL_INBOUND_NUMBER=08047361154
+# EXOTEL_OPENAI_REALTIME_MODEL=gpt-4o-realtime-preview-2024-12-17
+
+# Optional — override Dhiora knowledge for the voice agent
+# DHIORA_KNOWLEDGE=Custom product description and FAQs...
+```
+
+**Exotel flow setup:** Voicebot → `GET /api/v1/exotel/call/stream-url` → Passthru (async) → `GET /api/v1/exotel/call/complete`
+
+See `GET /api/v1/exotel/call/config` for generated URLs after deploy.
 
 ### File Upload Settings
 

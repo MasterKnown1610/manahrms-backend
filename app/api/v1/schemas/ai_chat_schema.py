@@ -60,3 +60,76 @@ class ChatResponse(BaseModel):
                 "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
             }
         }
+
+
+class TranscribeResponse(BaseModel):
+    """Speech-to-text result for voice input"""
+
+    success: bool = True
+    transcript: str = Field(default="", description="Transcribed text from audio")
+    message: Optional[str] = Field(
+        default=None,
+        description="Error or info message when success is false",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "transcript": "Mark my attendance",
+                "message": None,
+            }
+        }
+
+
+class SpeakRequest(BaseModel):
+    """Text-to-speech request"""
+
+    text: str = Field(..., min_length=1, description="Assistant (or any) text to speak")
+    voice: Optional[str] = Field(
+        default=None,
+        description="OpenAI voice override (alloy, echo, fable, onyx, nova, shimmer). Defaults to server config.",
+    )
+    format: Optional[str] = Field(
+        default=None,
+        description="Audio format: mp3, opus, aac, flac. Defaults to server config.",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "text": "Done! Your attendance has been marked.",
+                "voice": "alloy",
+                "format": "mp3",
+            }
+        }
+
+
+class SpeakResponse(BaseModel):
+    """Text-to-speech result (base64 audio for SPA playback)"""
+
+    success: bool = True
+    audio_base64: Optional[str] = Field(
+        default=None,
+        description="Base64-encoded audio bytes",
+    )
+    format: str = Field(default="mp3", description="Audio container format")
+    content_type: str = Field(
+        default="audio/mpeg",
+        description="MIME type for data-URL playback",
+    )
+    message: Optional[str] = Field(
+        default=None,
+        description="Error or info message when success is false",
+    )
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "success": True,
+                "audio_base64": "SUQzBAAAAAA...",
+                "format": "mp3",
+                "content_type": "audio/mpeg",
+                "message": None,
+            }
+        }

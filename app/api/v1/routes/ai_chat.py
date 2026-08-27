@@ -1,13 +1,13 @@
 """
 AI Chat routes - Agentic AI that performs real HRMS actions via natural language.
-Endpoints: POST /ask (JSON), POST /ask/stream (SSE) for the same agent with server-side thread memory.
+Endpoints: POST /ask (JSON), POST /ask/stream (SSE), POST /transcribe (STT), POST /speak (TTS).
 """
 import json
 import logging
 import uuid
 from typing import Dict, List, Tuple
 
-from fastapi import APIRouter, Depends, status, Query, HTTPException
+from fastapi import APIRouter, Depends, status, Query, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
@@ -18,13 +18,21 @@ from app.db.session import get_database_session, SessionLocal
 from app.api.v1.dependencies import get_current_authenticated_user
 from app.api.v1.models.user_model import User, UserRole
 from app.api.v1.models.subscription_model import AIUsage, CompanyAIUsage
-from app.api.v1.schemas.ai_chat_schema import ChatRequest, ChatResponse
+from app.api.v1.schemas.ai_chat_schema import (
+    ChatRequest,
+    ChatResponse,
+    TranscribeResponse,
+    SpeakRequest,
+    SpeakResponse,
+)
 from app.api.v1.services.agentic_ai_service import AgenticAIService
+from app.api.v1.services.voice_service import VoiceService
 from app.api.v1.services.ai_conversation_memory import (
     append_turn,
     get_messages,
     new_conversation_id,
 )
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +283,122 @@ async def ask_ai_chatbot_stream(
         media_type="text/event-stream",
         headers=headers,
     )
+
+
+# ─── Voice (STT / TTS) ────────────────────────────────────────────────────────
+
+@router.post(
+    "/transcribe",
+    response_model=TranscribeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Speech-to-text (Whisper)",
+)
+async def transcribe_audio(
+    audio: UploadFile = File(..., description="Recorded audio (webm, mp3, wav, m4a, ogg, …)"),
+    language: Optional[str] = Form(
+        default=None,
+        description="Optional ISO-639-1 language hint (e.g. en, te). Omit for auto-detect.",
+    ),
+    current_user: User = Depends(get_current_authenticated_user),
+):
+    """
+    Convert voice input to text. Frontend should send multipart FormData with field **`audio`**,
+    then pass `transcript` as `question` to `/ask` or `/ask/stream`.
+    """
+    _ = current_user  # auth required; same company/user gate as /ask
+    try:
+        voice = VoiceService()
+    except ValueError:
+        return TranscribeResponse(
+            success=False,
+            transcript="",
+            message="AI service is not configured. Please contact your administrator to set up the OpenAI API key.",
+        )
+
+    try:
+        data = await audio.read()
+        if not data:
+            return TranscribeResponse(
+                success=False,
+                transcript="",
+                message="Audio file is required.",
+            )
+        if len(data) > settings.MAX_VOICE_AUDIO_SIZE:
+            mb = settings.MAX_VOICE_AUDIO_SIZE // (1024 * 1024)
+            return TranscribeResponse(
+                success=False,
+                transcript="",
+                message=f"Audio file is too large. Maximum size is {mb}MB.",
+            )
+
+        filename = audio.filename or "voice.webm"
+        transcript = voice.transcribe(
+            audio_bytes=data,
+            filename=filename,
+            language=language,
+        )
+        if not transcript:
+            return TranscribeResponse(
+                success=False,
+                transcript="",
+                message="Could not understand audio. Please try again.",
+            )
+        return TranscribeResponse(success=True, transcript=transcript, message=None)
+    except ValueError as e:
+        return TranscribeResponse(success=False, transcript="", message=str(e))
+    except Exception as e:
+        logger.exception("Voice transcribe failed")
+        return TranscribeResponse(
+            success=False,
+            transcript="",
+            message=f"Error transcribing audio: {str(e)}",
+        )
+
+
+@router.post(
+    "/speak",
+    response_model=SpeakResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Text-to-speech (OpenAI TTS)",
+)
+async def speak_text(
+    request: SpeakRequest,
+    current_user: User = Depends(get_current_authenticated_user),
+):
+    """
+    Convert assistant (or any) text to base64 audio for SPA playback.
+    Typical flow: `/transcribe` → `/ask` → `/speak` with `text` = assistant `message`.
+    """
+    _ = current_user
+    try:
+        voice = VoiceService()
+    except ValueError:
+        return SpeakResponse(
+            success=False,
+            message="AI service is not configured. Please contact your administrator to set up the OpenAI API key.",
+        )
+
+    try:
+        audio_b64, fmt, content_type = voice.speak(
+            text=request.text,
+            voice=request.voice,
+            audio_format=request.format,
+        )
+        return SpeakResponse(
+            success=True,
+            audio_base64=audio_b64,
+            format=fmt,
+            content_type=content_type,
+            message=None,
+        )
+    except ValueError as e:
+        return SpeakResponse(success=False, message=str(e))
+    except Exception as e:
+        logger.exception("Voice speak failed")
+        return SpeakResponse(
+            success=False,
+            message=f"Error generating speech: {str(e)}",
+        )
 
 
 # ─── Usage Tracking Endpoints ─────────────────────────────────────────────────

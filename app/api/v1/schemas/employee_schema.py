@@ -1,8 +1,9 @@
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date
-from typing import Optional
+from typing import Optional, Dict, Any
 from decimal import Decimal
 from app.api.v1.models.employee_model import Gender
+from app.api.v1.schemas.role_schema import ModulePermission
 
 
 class EmployeeBase(BaseModel):
@@ -59,8 +60,43 @@ class EmployeeResponse(EmployeeBase):
     
     # Computed field
     full_name: Optional[str] = None
+    department_name: Optional[str] = None
+    role_id: Optional[int] = None
+    role_name: Optional[str] = None
+    department_permissions: Dict[str, Any] = Field(default_factory=dict)
+    employee_permissions: Dict[str, Any] = Field(default_factory=dict)
+    permissions: Dict[str, Any] = Field(default_factory=dict)
+    permissions_overridden: bool = False
     
     model_config = {"from_attributes": True}
+
+
+class EmployeePermissionsUpdate(BaseModel):
+    """
+    Assign a role and/or set extra permissions for this employee.
+
+    - role_id only → follow live Role Management permissions
+    - employee_permissions → extras on top of department/role (additive)
+    - permissions → same as extras (or a full matrix; extras are extracted vs role)
+    - inherit_from_role=true → clear extras, department/role only
+    """
+    role_id: Optional[int] = None
+    employee_permissions: Optional[Dict[str, ModulePermission]] = None
+    permissions: Optional[Dict[str, ModulePermission]] = None
+    inherit_from_role: bool = False
+
+
+class EmployeePermissionsResponse(BaseModel):
+    employee_id: int
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+    role_id: Optional[int] = None
+    role_name: Optional[str] = None
+    department_permissions: Dict[str, Any] = Field(default_factory=dict)
+    employee_permissions: Dict[str, Any] = Field(default_factory=dict)
+    permissions: Dict[str, Any] = Field(default_factory=dict)
+    permissions_overridden: bool = False
+    message: Optional[str] = None
 
 
 class EmployeeWithCredentials(BaseModel):

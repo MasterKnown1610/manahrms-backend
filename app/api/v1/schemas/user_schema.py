@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, validator
-from typing import Optional
+from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
@@ -53,6 +53,13 @@ class UserResponse(BaseModel):
     username: str
     full_name: str
     role: UserRoleEnum
+    role_id: Optional[int] = None
+    role_name: Optional[str] = None
+    department_permissions: Dict[str, Any] = Field(default_factory=dict)
+    employee_permissions: Dict[str, Any] = Field(default_factory=dict)
+    permissions: Dict[str, Any] = Field(default_factory=dict)
+    permissions_overridden: bool = False
+    employee_id: Optional[int] = None
     is_active: bool
     is_superuser: bool
     force_password_change: bool

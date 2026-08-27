@@ -8,9 +8,16 @@ import logging
 from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.user_model import User, UserRole
 from app.api.v1.models.department_model import Department
+from app.api.v1.models.role_model import Role
 from app.api.v1.models.task_model import Task
 from app.api.v1.models.employee_attachment_model import EmployeeAttachment, AttachmentType
-from app.api.v1.schemas.employee_schema import EmployeeCreate, EmployeeUpdate
+from app.api.v1.schemas.employee_schema import (
+    EmployeeCreate,
+    EmployeeUpdate,
+    EmployeePermissionsUpdate,
+    EmployeePermissionsResponse,
+    EmployeeResponse,
+)
 from app.core.security import hash_password_for_storage
 from app.api.v1.services.vector_sync_service import VectorSyncService
 from app.api.v1.utils.file_upload import save_uploaded_file, delete_file
@@ -133,6 +140,7 @@ class EmployeeService:
                 hashed_password=hashed_password,
                 role=UserRole.EMPLOYEE,
                 employee_id=new_employee.id,
+                permissions=None,
                 is_active=True,
                 is_superuser=False,
                 force_password_change=True
@@ -175,6 +183,277 @@ class EmployeeService:
             )
         
         return employee
+
+    ACTIONS = ("view", "create", "edit", "delete")
+
+    @staticmethod
+    def _permissions_to_dict(permissions) -> dict:
+        if not permissions:
+            return {}
+        result = {}
+        for module, perms in permissions.items():
+            if hasattr(perms, "model_dump"):
+                result[module] = perms.model_dump()
+            elif isinstance(perms, dict):
+                result[module] = perms
+            else:
+                result[module] = dict(perms)
+        return result
+
+    @staticmethod
+    def _normalize_module(perms: dict) -> dict:
+        return {
+            action: bool((perms or {}).get(action))
+            for action in EmployeeService.ACTIONS
+        }
+
+    @staticmethod
+    def _merge_permissions(department: dict, extras: dict) -> dict:
+        """OR-merge: employee extras add on top of live department/role permissions."""
+        merged = {}
+        modules = set((department or {}).keys()) | set((extras or {}).keys())
+        for module in modules:
+            dept_mod = EmployeeService._normalize_module((department or {}).get(module) or {})
+            extra_mod = EmployeeService._normalize_module((extras or {}).get(module) or {})
+            merged[module] = {
+                action: dept_mod[action] or extra_mod[action]
+                for action in EmployeeService.ACTIONS
+            }
+        return merged
+
+    @staticmethod
+    def _extras_only(incoming: dict, department: dict) -> dict:
+        """Keep only flags that are extra vs the live department/role template."""
+        extras = {}
+        incoming = incoming or {}
+        department = department or {}
+        for module, perms in incoming.items():
+            extra_mod = {}
+            dept_mod = department.get(module) or {}
+            for action in EmployeeService.ACTIONS:
+                if bool((perms or {}).get(action)) and not bool(dept_mod.get(action)):
+                    extra_mod[action] = True
+            if extra_mod:
+                extras[module] = extra_mod
+        return extras
+
+    @staticmethod
+    def _department_role(db: Session, employee: Employee) -> Optional[Role]:
+        """Role for employee's department. Prefer assigned role; else sole department role."""
+        user = employee.user
+        if user and user.custom_role_id and user.custom_role:
+            same_company = user.custom_role.company_id == employee.company_id
+            same_dept = (
+                user.custom_role.department_id is None
+                or user.custom_role.department_id == employee.department_id
+            )
+            if same_company and same_dept:
+                return user.custom_role
+
+        if not employee.department_id:
+            return None
+
+        dept_roles = (
+            db.query(Role)
+            .filter(
+                Role.company_id == employee.company_id,
+                Role.department_id == employee.department_id,
+            )
+            .order_by(Role.id.asc())
+            .all()
+        )
+        if len(dept_roles) == 1:
+            return dept_roles[0]
+        if user and user.custom_role_id:
+            for role in dept_roles:
+                if role.id == user.custom_role_id:
+                    return role
+        return None
+
+    @staticmethod
+    def resolve_employee_access(
+        db: Session, employee: Employee
+    ) -> dict:
+        """
+        Department/role permissions stay live from Role Management.
+        user.permissions holds extras only; effective = OR-merge of both.
+        """
+        user = employee.user
+        role = EmployeeService._department_role(db, employee)
+        department_permissions = dict(role.permissions or {}) if role else {}
+        extras = dict(user.permissions) if user and user.permissions else {}
+        extras = EmployeeService._extras_only(extras, department_permissions)
+        effective = EmployeeService._merge_permissions(department_permissions, extras)
+
+        role_id = None
+        role_name = None
+        if role:
+            role_id = role.id
+            role_name = role.name
+        elif user and user.custom_role_id:
+            role_id = user.custom_role_id
+            role_name = user.custom_role.name if user.custom_role else None
+
+        return {
+            "role_id": role_id,
+            "role_name": role_name,
+            "department_permissions": department_permissions,
+            "employee_permissions": extras,
+            "permissions": effective,
+            "permissions_overridden": bool(extras),
+        }
+
+    @staticmethod
+    def _permissions_response(
+        db: Session, employee: Employee
+    ) -> EmployeePermissionsResponse:
+        access = EmployeeService.resolve_employee_access(db, employee)
+        return EmployeePermissionsResponse(
+            employee_id=employee.id,
+            department_id=employee.department_id,
+            department_name=employee.department.name if employee.department else None,
+            **access,
+        )
+
+    @staticmethod
+    def to_employee_response(db: Session, employee: Employee) -> EmployeeResponse:
+        access = EmployeeService.resolve_employee_access(db, employee)
+        data = EmployeeResponse.model_validate(employee)
+        return data.model_copy(
+            update={
+                "department_name": (
+                    employee.department.name if employee.department else None
+                ),
+                **access,
+            }
+        )
+
+    @staticmethod
+    def resolve_user_access(db: Session, user: User) -> dict:
+        """Effective role/permissions for login and /auth/me."""
+        empty = {
+            "role_id": None,
+            "role_name": None,
+            "department_permissions": {},
+            "employee_permissions": {},
+            "permissions": {},
+            "permissions_overridden": False,
+        }
+        if user.role == UserRole.ADMIN:
+            return empty
+        if user.employee_id and user.employee:
+            return EmployeeService.resolve_employee_access(db, user.employee)
+        extras = dict(user.permissions) if user.permissions else {}
+        if user.custom_role_id and user.custom_role:
+            department_permissions = dict(user.custom_role.permissions or {})
+            extras = EmployeeService._extras_only(extras, department_permissions)
+            return {
+                "role_id": user.custom_role_id,
+                "role_name": user.custom_role.name,
+                "department_permissions": department_permissions,
+                "employee_permissions": extras,
+                "permissions": EmployeeService._merge_permissions(
+                    department_permissions, extras
+                ),
+                "permissions_overridden": bool(extras),
+            }
+        if extras:
+            return {
+                **empty,
+                "employee_permissions": extras,
+                "permissions": extras,
+                "permissions_overridden": True,
+            }
+        return empty
+
+    @staticmethod
+    def to_user_response(db: Session, user: User):
+        from app.api.v1.schemas.user_schema import UserResponse
+
+        access = EmployeeService.resolve_user_access(db, user)
+        data = UserResponse.model_validate(user)
+        return data.model_copy(update=access)
+
+    @staticmethod
+    def get_employee_permissions(
+        db: Session, employee_id: int, company_id: int
+    ) -> EmployeePermissionsResponse:
+        employee = EmployeeService.get_employee_by_id(db, employee_id, company_id)
+        if not employee.user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Employee has no login account",
+            )
+        return EmployeeService._permissions_response(db, employee)
+
+    @staticmethod
+    def update_employee_permissions(
+        db: Session,
+        employee_id: int,
+        company_id: int,
+        data: EmployeePermissionsUpdate,
+    ) -> EmployeePermissionsResponse:
+        employee = EmployeeService.get_employee_by_id(db, employee_id, company_id)
+        user = employee.user
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Employee has no login account",
+            )
+
+        fields_set = data.model_fields_set
+        if (
+            data.role_id is None
+            and "permissions" not in fields_set
+            and "employee_permissions" not in fields_set
+            and not data.inherit_from_role
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Provide role_id, employee_permissions, permissions, and/or inherit_from_role",
+            )
+
+        if data.role_id is not None:
+            role = (
+                db.query(Role)
+                .filter(Role.id == data.role_id, Role.company_id == company_id)
+                .first()
+            )
+            if not role:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Role not found for this company",
+                )
+            user.custom_role_id = role.id
+
+        if user.custom_role_id:
+            assigned = (
+                db.query(Role)
+                .filter(Role.id == user.custom_role_id, Role.company_id == company_id)
+                .first()
+            )
+            department_permissions = dict(assigned.permissions or {}) if assigned else {}
+        else:
+            template_role = EmployeeService._department_role(db, employee)
+            department_permissions = dict(template_role.permissions or {}) if template_role else {}
+
+        if data.inherit_from_role:
+            user.permissions = None
+        elif "employee_permissions" in fields_set and data.employee_permissions is not None:
+            incoming = EmployeeService._permissions_to_dict(data.employee_permissions)
+            extras = EmployeeService._extras_only(incoming, department_permissions)
+            user.permissions = extras or None
+        elif "permissions" in fields_set and data.permissions is not None:
+            incoming = EmployeeService._permissions_to_dict(data.permissions)
+            extras = EmployeeService._extras_only(incoming, department_permissions)
+            user.permissions = extras or None
+        elif data.role_id is not None and "permissions" not in fields_set and "employee_permissions" not in fields_set:
+            user.permissions = None
+
+        db.commit()
+        db.refresh(user)
+        db.refresh(employee)
+        return EmployeeService._permissions_response(db, employee)
     
     @staticmethod
     def get_all_employees(

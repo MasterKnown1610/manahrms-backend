@@ -38,3 +38,5 @@ from app.api.v1.models.booking_model import BookingResource, Booking  # noqa
 from app.api.v1.models.billing_ops_model import Invoice, InvoiceItem  # noqa
 from app.api.v1.models.shift_model import Shift, ShiftAssignment  # noqa
 from app.api.v1.models.donation_model import Donation  # noqa
+from app.api.v1.models.lead_model import Lead  # noqa
+from app.api.v1.models.role_model import Role  # noqa

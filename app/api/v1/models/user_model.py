@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Enum, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -31,6 +32,10 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(Enum(UserRole), default=UserRole.EMPLOYEE, nullable=False)
     employee_id = Column(Integer, ForeignKey("employees.id", ondelete="SET NULL"), nullable=True)
+    # Custom RBAC: custom_role_id = role template; permissions NULL = inherit role live;
+    # permissions = {...} = per-employee override (including {} = intentionally no access)
+    custom_role_id = Column(Integer, ForeignKey("roles.id", ondelete="SET NULL"), nullable=True, index=True)
+    permissions = Column(JSONB, nullable=True, default=None)
     is_active = Column(Boolean, default=True)
     is_superuser = Column(Boolean, default=False)
     force_password_change = Column(Boolean, default=False)  # For first-time employee login
@@ -40,7 +45,16 @@ class User(Base):
     # Relationships
     company = relationship("Company", back_populates="users")
     employee = relationship("Employee", back_populates="user", foreign_keys=[employee_id])
+    custom_role = relationship("Role", foreign_keys=[custom_role_id])
     department_access = relationship("DepartmentAccess", foreign_keys="DepartmentAccess.user_id", back_populates="user", cascade="all, delete-orphan")
+
+    @property
+    def role_id(self):
+        return self.custom_role_id
+
+    @property
+    def role_name(self):
+        return self.custom_role.name if self.custom_role else None
     
     def __repr__(self):
         return f"<User {self.username} ({self.role})>"

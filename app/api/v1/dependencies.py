@@ -145,6 +145,47 @@ def require_admin_role(
     return current_user
 
 
+def user_has_permission(
+    user: User,
+    module: str,
+    action: str,
+    db: Session | None = None,
+) -> bool:
+    """True if company admin, or effective permissions allow module/action."""
+    if user.role == UserRole.ADMIN:
+        return True
+    if db is not None:
+        from app.api.v1.services.employee_service import EmployeeService
+
+        access = EmployeeService.resolve_user_access(db, user)
+        perms = access.get("permissions") or {}
+    else:
+        perms = user.permissions or {}
+    module_perms = perms.get(module) or {}
+    return bool(module_perms.get(action) is True)
+
+
+def require_permission(module: str, action: str):
+    """FastAPI dependency factory: require permissions[module][action]. Admins always pass."""
+
+    def _checker(
+        current_user: User = Depends(get_current_authenticated_user),
+        db: Session = Depends(get_database_session),
+    ) -> User:
+        if not user_has_permission(current_user, module, action, db=db):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "success": False,
+                    "message": f"Permission denied: {module}.{action} required",
+                    "error_code": "PERMISSION_DENIED",
+                },
+            )
+        return current_user
+
+    return _checker
+
+
 def require_employee_role(
     current_user: User = Depends(get_current_authenticated_user),
 ) -> User:

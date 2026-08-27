@@ -46,6 +46,11 @@ class EmployeeUpdate(BaseModel):
     pin_code: Optional[str] = Field(None, max_length=10, description="PIN/ZIP code")
     notes: Optional[str] = Field(None, description="Additional notes about the employee")
     is_active: Optional[bool] = None
+    initial_password: Optional[str] = Field(
+        None,
+        min_length=6,
+        description="Reset the employee's login password",
+    )
 
 
 class EmployeeResponse(EmployeeBase):

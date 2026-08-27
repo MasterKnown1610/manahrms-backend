@@ -483,6 +483,7 @@ class EmployeeService:
         employee = EmployeeService.get_employee_by_id(db, employee_id, company_id)
         
         update_data = employee_data.model_dump(exclude_unset=True)
+        initial_password = update_data.pop("initial_password", None)
         
         # If email is being updated, check uniqueness per company
         if 'email' in update_data:
@@ -501,6 +502,24 @@ class EmployeeService:
         
         for field, value in update_data.items():
             setattr(employee, field, value)
+
+        # Password lives on the User login account, not the Employee row
+        user = employee.user
+        if initial_password:
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Employee has no login account to update password"
+                )
+            user.hashed_password = hash_password_for_storage(initial_password)
+            user.force_password_change = True
+        if user:
+            if "email" in update_data:
+                user.email = update_data["email"]
+            if "first_name" in update_data or "last_name" in update_data:
+                user.full_name = f"{employee.first_name} {employee.last_name}"
+            if "is_active" in update_data:
+                user.is_active = update_data["is_active"]
         
         db.commit()
         db.refresh(employee)

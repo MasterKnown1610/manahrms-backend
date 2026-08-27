@@ -163,6 +163,7 @@ async def update_employee_permissions(
 
 
 @router.put("/{employee_id}", response_model=EmployeeResponse)
+@router.patch("/{employee_id}", response_model=EmployeeResponse)
 async def update_employee_information(
     employee_id: int,
     employee_data: EmployeeUpdate,

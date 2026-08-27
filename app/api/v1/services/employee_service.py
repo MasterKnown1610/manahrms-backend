@@ -474,6 +474,52 @@ class EmployeeService:
         return query.offset(skip).limit(limit).all()
     
     @staticmethod
+    def _get_employee_user(db: Session, employee: Employee) -> Optional[User]:
+        user = (
+            db.query(User)
+            .filter(
+                User.company_id == employee.company_id,
+                User.employee_id == employee.id,
+            )
+            .first()
+        )
+        if user:
+            return user
+        if employee.user:
+            return employee.user
+        return (
+            db.query(User)
+            .filter(
+                User.company_id == employee.company_id,
+                User.email == employee.email,
+                User.role == UserRole.EMPLOYEE,
+            )
+            .first()
+        )
+
+    @staticmethod
+    def _create_employee_user(db: Session, employee: Employee, password: str) -> User:
+        username = employee.employee_code.lower().replace(" ", "_")
+        existing_user = db.query(User).filter(User.username == username).first()
+        if existing_user:
+            username = f"{username}_{employee.id}"
+        user = User(
+            company_id=employee.company_id,
+            email=employee.email,
+            username=username,
+            full_name=f"{employee.first_name} {employee.last_name}",
+            hashed_password=hash_password_for_storage(password),
+            role=UserRole.EMPLOYEE,
+            employee_id=employee.id,
+            permissions=None,
+            is_active=True if employee.is_active is None else employee.is_active,
+            is_superuser=False,
+            force_password_change=True,
+        )
+        db.add(user)
+        return user
+
+    @staticmethod
     def update_employee(
         db: Session, 
         employee_id: int, 
@@ -504,15 +550,17 @@ class EmployeeService:
             setattr(employee, field, value)
 
         # Password lives on the User login account, not the Employee row
-        user = employee.user
+        user = EmployeeService._get_employee_user(db, employee)
         if initial_password:
             if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Employee has no login account to update password"
-                )
-            user.hashed_password = hash_password_for_storage(initial_password)
-            user.force_password_change = True
+                user = EmployeeService._create_employee_user(db, employee, initial_password)
+                logger.info("Created login account for employee id=%s while resetting password", employee.id)
+            else:
+                user.hashed_password = hash_password_for_storage(initial_password)
+                user.force_password_change = True
+                if user.employee_id != employee.id:
+                    user.employee_id = employee.id
+                logger.info("Updated login password for employee id=%s user id=%s", employee.id, user.id)
         if user:
             if "email" in update_data:
                 user.email = update_data["email"]

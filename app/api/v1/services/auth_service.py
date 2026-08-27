@@ -1,10 +1,11 @@
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
-from fastapi import status
+from fastapi import HTTPException, status
 from datetime import timedelta
 import logging
 
 from app.api.v1.models.user_model import User, UserRole
+from app.api.v1.models.employee_model import Employee
 from app.api.v1.models.company_model import Company, CompanyType
 from app.api.v1.schemas.user_schema import UserLogin, PasswordChange, ForgotPasswordRequest, ResetPasswordRequest
 from app.api.v1.schemas.company_schema import CompanyRegister
@@ -175,18 +176,42 @@ class AuthService:
         logger.info(f"Login attempt for username/email: {login_data.username}")
         
         try:
-            # Load user with company relationship to avoid lazy loading issues
-            user = db.query(User).options(joinedload(User.company)).filter(
-                or_(
-                    User.username == login_data.username,
-                    User.email == login_data.username
+            identifier = (login_data.username or "").strip()
+            identifier_lower = identifier.lower()
+
+            # Email is unique per company, not globally. Check every match
+            # and accept the account whose password is correct.
+            candidates = (
+                db.query(User)
+                .options(joinedload(User.company))
+                .filter(
+                    or_(
+                        func.lower(User.username) == identifier_lower,
+                        func.lower(User.email) == identifier_lower,
+                        User.employee_id.in_(
+                            db.query(Employee.id).filter(
+                                func.lower(Employee.employee_code) == identifier_lower
+                            )
+                        ),
+                    )
                 )
-            ).first()
-            
-            logger.debug(f"User query completed. User found: {user is not None}")
-            
+                .all()
+            )
+
+            user = None
+            for candidate in candidates:
+                if verify_password_against_hash(login_data.password, candidate.hashed_password):
+                    user = candidate
+                    break
+
+            logger.debug(
+                "User query completed. Candidates=%s matched=%s",
+                len(candidates),
+                user is not None,
+            )
+
             if not user:
-                logger.warning(f"Login failed: User not found for username/email: {login_data.username}")
+                logger.warning(f"Login failed: No matching account for username/email: {login_data.username}")
                 raise_http_exception(
                     message="Incorrect username or password",
                     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -194,15 +219,6 @@ class AuthService:
                 )
             
             logger.debug(f"User found: id={user.id}, username={user.username}, email={user.email}, is_active={user.is_active}")
-            
-            if not verify_password_against_hash(login_data.password, user.hashed_password):
-                logger.warning(f"Login failed: Invalid password for user: {user.username}")
-                raise_http_exception(
-                    message="Incorrect username or password",
-                    status_code=status.HTTP_401_UNAUTHORIZED,
-                    error_code="INVALID_CREDENTIALS"
-                )
-            
             logger.debug("Password verification successful")
             
             if not user.is_active:
@@ -249,6 +265,8 @@ class AuthService:
             
             return user, access_token
             
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Unexpected error during login for username/email: {login_data.username}", exc_info=True)
             raise

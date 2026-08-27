@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import AliasChoices, BaseModel, EmailStr, Field
 from datetime import datetime, date
 from typing import Optional, Dict, Any
 from decimal import Decimal
@@ -50,6 +50,7 @@ class EmployeeUpdate(BaseModel):
         None,
         min_length=6,
         description="Reset the employee's login password",
+        validation_alias=AliasChoices("initial_password", "password", "initialPassword"),
     )
 
 

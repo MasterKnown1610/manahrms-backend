@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, validator
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -66,6 +66,16 @@ class UserResponse(BaseModel):
     created_at: datetime
     
     model_config = {"from_attributes": True}
+
+    @field_validator(
+        "permissions",
+        "department_permissions",
+        "employee_permissions",
+        mode="before",
+    )
+    @classmethod
+    def empty_dict_if_none(cls, value):
+        return value if value is not None else {}
 
 
 class TokenResponse(BaseModel):

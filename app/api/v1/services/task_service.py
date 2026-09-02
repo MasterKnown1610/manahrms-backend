@@ -562,4 +562,36 @@ class TaskService:
         
         return task
 
+    @staticmethod
+    def _descendant_task_ids(db: Session, company_id: int, task_id: int) -> List[int]:
+        ids = [task_id]
+        children = (
+            db.query(Task.id)
+            .filter(Task.company_id == company_id, Task.parent_task_id == task_id)
+            .all()
+        )
+        for (child_id,) in children:
+            ids.extend(TaskService._descendant_task_ids(db, company_id, child_id))
+        return ids
+
+    @staticmethod
+    def delete_task(db: Session, company_id: int, task_id: int) -> None:
+        task = TaskService.get_task_by_id(db, company_id, task_id)
+        task_ids = TaskService._descendant_task_ids(db, company_id, task_id)
+
+        db.delete(task)
+        db.commit()
+
+        try:
+            sync_service = VectorSyncService()
+            for descendant_id in task_ids:
+                try:
+                    sync_service.delete_content(db, company_id, "task", descendant_id)
+                except Exception as e:
+                    logger.error(
+                        f"Failed to delete vector store entry for task {descendant_id}: {str(e)}"
+                    )
+        except Exception as e:
+            logger.error(f"Failed to sync vector store after deleting task {task_id}: {str(e)}")
+
 

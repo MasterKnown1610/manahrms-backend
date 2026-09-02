@@ -29,6 +29,7 @@ from app.api.v1.services.task_permission_service import TaskPermissionService
 from app.api.v1.services.task_comment_service import TaskCommentService
 from app.api.v1.services.task_commit_service import TaskCommitService
 from app.api.v1.utils.pagination import paginate_query, create_paginated_response
+from app.api.v1.schemas.user_schema import MessageResponse
 
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
@@ -292,6 +293,20 @@ async def close_task_by_id(
         .first()
     )
     return TaskResponse.model_validate(task_with_relations)
+
+
+@router.delete("/{task_id}", response_model=MessageResponse)
+async def delete_task_by_id(
+    task_id: int,
+    current_user: User = Depends(require_task_manager),
+    db: Session = Depends(get_database_session),
+):
+    """
+    Permanently delete a task and its subtasks, comments, and git records.
+    Available to admins and employees with task-manager permission.
+    """
+    TaskService.delete_task(db, current_user.company_id, task_id)
+    return MessageResponse(message=f"Task {task_id} has been deleted successfully")
 
 
 # ─────────────────────────────────────────────────────────────────

@@ -9,8 +9,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 from openai import OpenAI
 from datetime import datetime, date
+import html as html_lib
 import json
 import logging
+import re
 
 from app.core.config import settings
 from app.api.v1.models.user_model import User, UserRole
@@ -32,6 +34,76 @@ from app.api.v1.models.donation_model import Donation
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_ROUNDS = 8  # increased for multi-step agentic tasks across new modules
+
+_RICH_TEXT_TAG_RE = re.compile(
+    r"</?(?:p|div|ul|ol|li|h[1-6]|br|strong|em|b|i|span|blockquote)\b",
+    re.IGNORECASE,
+)
+
+
+def format_task_description_for_rich_text(description: Optional[str]) -> Optional[str]:
+    """
+    Normalize an AI task description into HTML that a rich text editor can load.
+    Used only for AI task creation.
+    """
+    if description is None:
+        return None
+    text = description.strip()
+    if not text:
+        return None
+    if _RICH_TEXT_TAG_RE.search(text):
+        return text
+
+    def inline(value: str) -> str:
+        escaped = html_lib.escape(value)
+        escaped = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", escaped)
+        escaped = re.sub(r"__(.+?)__", r"<strong>\1</strong>", escaped)
+        escaped = re.sub(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", r"<em>\1</em>", escaped)
+        return escaped
+
+    blocks: List[str] = []
+    list_items: List[str] = []
+    list_type: Optional[str] = None
+
+    def flush_list() -> None:
+        nonlocal list_items, list_type
+        if list_items and list_type:
+            items = "".join(f"<li>{inline(item)}</li>" for item in list_items)
+            blocks.append(f"<{list_type}>{items}</{list_type}>")
+        list_items = []
+        list_type = None
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            flush_list()
+            continue
+        heading = re.match(r"^(#{1,3})\s+(.+)$", line)
+        if heading:
+            flush_list()
+            level = len(heading.group(1))
+            blocks.append(f"<h{level}>{inline(heading.group(2))}</h{level}>")
+            continue
+        unordered = re.match(r"^[-*]\s+(.+)$", line)
+        if unordered:
+            if list_type != "ul":
+                flush_list()
+                list_type = "ul"
+            list_items.append(unordered.group(1))
+            continue
+        ordered = re.match(r"^\d+[.)]\s+(.+)$", line)
+        if ordered:
+            if list_type != "ol":
+                flush_list()
+                list_type = "ol"
+            list_items.append(ordered.group(1))
+            continue
+        flush_list()
+        blocks.append(f"<p>{inline(line)}</p>")
+
+    flush_list()
+    return "".join(blocks) if blocks else f"<p>{inline(text)}</p>"
+
 
 # ── Industry context helpers ──────────────────────────────────────────────────
 
@@ -142,18 +214,26 @@ ADMIN_TOOLS = [
         "type": "function",
         "function": {
             "name": "create_task",
-            "description": "Create a task and optionally assign it. Confirm before calling.",
+            "description": "Create a task and optionally assign it. Confirm before calling. Always generate a rich-text HTML description for the editor.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string"},
-                    "description": {"type": "string"},
+                    "description": {
+                        "type": "string",
+                        "description": (
+                            "Required rich-text HTML for the task editor. "
+                            "Use only these tags: p, h2, h3, ul, ol, li, strong, em, br. "
+                            "Always include a short <p> overview, then optional <h3> sections "
+                            "and <ul>/<ol> for steps or acceptance criteria. Do not use markdown."
+                        ),
+                    },
                     "priority": {"type": "string", "enum": ["low", "medium", "high"]},
                     "due_date": {"type": "string", "description": "YYYY-MM-DD"},
                     "assigned_to_employee_id": {"type": "integer"},
                     "project_id": {"type": "integer"},
                 },
-                "required": ["title"],
+                "required": ["title", "description"],
             },
         },
     },
@@ -703,7 +783,11 @@ RULES:
    d. Call the mutating tool ONLY after explicit confirmation.
    e. On success, reply briefly with key details (never echo passwords).
 3. Security: Never repeat passwords.
-4. Be concise and professional. Use industry-appropriate terminology."""
+4. Be concise and professional. Use industry-appropriate terminology.
+5. When calling create_task, always generate description as rich-text HTML for a rich text editor.
+   Use only: p, h2, h3, ul, ol, li, strong, em, br.
+   Example: "<p>Fix the login timeout on employee portal.</p><h3>Steps</h3><ul><li>Reproduce the issue</li><li>Patch session expiry</li></ul><h3>Acceptance criteria</h3><ol><li>Users stay signed in for the token lifetime</li></ol>"
+   Never use markdown for create_task description."""
 
     # ─── Tool Executors ───────────────────────────────────────────────────────
 
@@ -880,9 +964,13 @@ RULES:
             "medium": TaskPriority.MEDIUM,
             "high": TaskPriority.HIGH,
         }
+        description = format_task_description_for_rich_text(args.get("description"))
+        if not description:
+            description = f"<p>{html_lib.escape(args['title'])}</p>"
+
         data = TaskCreate(
             title=args["title"],
-            description=args.get("description"),
+            description=description,
             priority=priority_map.get(args.get("priority", "medium"), TaskPriority.MEDIUM),
             due_date=due_date,
             assigned_to_employee_id=args.get("assigned_to_employee_id"),
